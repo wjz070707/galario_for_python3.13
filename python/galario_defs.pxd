@@ -25,6 +25,9 @@ cdef extern from "galario_py.h" namespace "galario":
     void _sample_image(int nx, int ny, void* image, dreal v_origin, dreal dRA, dreal dDec, dreal duv, dreal PA, int nd, void* u, void* v, void* vis) except +
     dreal _chi2_profile(int nr, void* intensity, dreal Rmin, dreal dR, dreal dxy, int nxy, dreal inc, dreal dRA, dreal dDec, dreal duv, dreal PA, int nd, void* u, void* v, void* vis_obs_re, void* vis_obs_im, void* vis_obs_w) except +
     dreal _chi2_image(int nx, int ny, void* image, dreal v_origin, dreal dRA, dreal dDec, dreal duv, dreal PA, int nd, void* u, void* v, void* vis_obs_re, void* vis_obs_im, void* vis_obs_w) except +
+    void* _create_chi2_image_context(int nx, int ny, int nd, void* u, void* v, void* vis_obs_re, void* vis_obs_im, void* weights) except +
+    void _destroy_chi2_image_context(void* context) except +
+    dreal _chi2_image_cached(void* context, void* data, dreal v_origin, dreal dRA, dreal dDec, dreal duv, dreal PA) except +
     void _sweep(int nr, void* intensity, dreal Rmin, dreal dR, int nxy, dreal dxy, dreal inc, void* image) except +
     void _uv_rotate(dreal PA, dreal dRA, dreal dDec, void* dRArot, void* dDecrot, int nd, void* u, void* v, void* urot, void* vrot) except +
 

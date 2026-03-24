@@ -37,6 +37,7 @@ __all__ = ['arcsec', 'deg', 'cgs_to_Jy', 'pc', 'au',
            'ngpus', 'use_gpu', 'threads',
            'check_obs', 'check_image_size', 'get_image_size',
            'sampleImage', 'sampleProfile', 'chi2Image', 'chi2Profile',
+           'Chi2ImageContext', 'createChi2ImageContext', 'chi2ImageCached',
            'get_coords_meshgrid',
            'sweep', 'uv_rotate', 'interpolate', 'apply_phase_vis', 'reduce_chi2',
            '_fft2d', '_fftshift', '_fftshift_axis0']
@@ -96,6 +97,49 @@ cdef class ArrayWrapper:
         """ Frees the array. This is called by Python when all the
         references to the object are gone. """
         cpp.galario_free(self.data_ptr)
+
+
+cdef class Chi2ImageContext:
+    cdef void* ctx
+    cdef int nx
+    cdef int ny
+    cdef int nd
+
+    cdef set_data(self, int nx, int ny, int nd, void* ctx):
+        self.nx = nx
+        self.ny = ny
+        self.nd = nd
+        self.ctx = ctx
+
+    def __dealloc__(self):
+        if self.ctx != NULL:
+            cpp._destroy_chi2_image_context(self.ctx)
+            self.ctx = NULL
+
+
+def createChi2ImageContext(int nx, int ny,
+                           dreal[::1] u, dreal[::1] v,
+                           dreal[::1] vis_obs_re, dreal[::1] vis_obs_im, dreal[::1] vis_obs_w):
+    """
+    Create a cached context for repeated chi2Image evaluations with fixed
+    observational arrays.
+    """
+    cdef Chi2ImageContext out = Chi2ImageContext()
+    cdef int nd
+
+    check_obs(vis_obs_re, vis_obs_im, vis_obs_w, u=u, v=v)
+    nd = len(u)
+
+    out.set_data(
+        nx, ny, nd,
+        cpp._create_chi2_image_context(
+            nx, ny, nd,
+            <void*>&u[0], <void*>&v[0],
+            <void*>&vis_obs_re[0], <void*>&vis_obs_im[0], <void*>&vis_obs_w[0]
+        )
+    )
+
+    return out
 
 
 def _init():
@@ -629,6 +673,33 @@ def chi2Image(dreal[:,::1] image, dxy, dreal[::1] u, dreal[::1] v,
 
     return cpp._chi2_image(image.shape[0], image.shape[1], <void*>&image[0,0], v_origin, dRA, dDec, duv, PA, len(u), <void*> &u[0],  <void*> &v[0],  <void*>&vis_obs_re[0], <void*>&vis_obs_im[0], <void*>&vis_obs_w[0])
 
+
+
+def chi2ImageCached(Chi2ImageContext ctx, dreal[:,::1] image, dxy,
+                    dRA=0., dDec=0., PA=0., origin='upper'):
+    """
+    Compute chi2 using a cached context that keeps fixed observational arrays
+    and reusable work buffers alive across repeated calls.
+    """
+    cdef dreal duv
+    cdef dreal v_origin
+    cdef int nxy
+
+    nxy = image.shape[0]
+    assert image.shape[0] == image.shape[1], "Expect square image."
+    assert nxy == ctx.nx and image.shape[1] == ctx.ny, "Image shape does not match context."
+
+    duv = 1 / (dxy*nxy)
+    v_origin = set_v_origin(origin)
+
+    return cpp._chi2_image_cached(
+        ctx.ctx,
+        <void*>&image[0,0],
+        v_origin,
+        dRA, dDec,
+        duv,
+        PA
+    )
 
 def chi2Profile(dreal[::1] intensity, Rmin, dR, nxy, dxy, dreal[::1] u, dreal[::1] v,
                 dreal[::1] vis_obs_re, dreal[::1] vis_obs_im, dreal[::1] vis_obs_w,
