@@ -1,0 +1,36 @@
+# taken from https://cmake.org/Wiki/CMake_FAQ#Can_I_do_.22make_uninstall.22_with_CMake.3F
+if(NOT EXISTS "@CMAKE_CURRENT_BINARY_DIR@/install_manifest.txt")
+  message(FATAL_ERROR "Cannot find install manifest: @CMAKE_CURRENT_BINARY_DIR@/install_manifest.txt")
+endif(NOT EXISTS "@CMAKE_CURRENT_BINARY_DIR@/install_manifest.txt")
+
+file(READ "@CMAKE_CURRENT_BINARY_DIR@/install_manifest.txt" files)
+
+# first `__init__.py` is in the python package directory that we want to remove
+file(STRINGS "@CMAKE_CURRENT_BINARY_DIR@/install_manifest.txt" lines REGEX "^.+/galario/__init__.py$")
+get_filename_component(pypkgdir "${lines}" DIRECTORY)
+
+# turn files into a list
+string(REGEX REPLACE "\n" ";" files "${files}")
+
+# list(APPEND "${pypkgdir}" files)
+foreach(file ${files})
+  message(STATUS "Uninstalling $ENV{DESTDIR}${file}")
+  if(IS_SYMLINK "$ENV{DESTDIR}${file}" OR EXISTS "$ENV{DESTDIR}${file}")
+    exec_program(
+      "@CMAKE_COMMAND@" ARGS "-E remove \"$ENV{DESTDIR}${file}\""
+      OUTPUT_VARIABLE rm_out
+      RETURN_VALUE rm_retval
+      )
+    if(NOT "${rm_retval}" STREQUAL 0)
+      message(FATAL_ERROR "Problem when removing $ENV{DESTDIR}${file}")
+    endif(NOT "${rm_retval}" STREQUAL 0)
+  else(IS_SYMLINK "$ENV{DESTDIR}${file}" OR EXISTS "$ENV{DESTDIR}${file}")
+    message(STATUS "File $ENV{DESTDIR}${file} does not exist.")
+  endif(IS_SYMLINK "$ENV{DESTDIR}${file}" OR EXISTS "$ENV{DESTDIR}${file}")
+endforeach(file)
+
+# now remove the python subdirectory
+if (IS_SYMLINK "${pypkgdir}" OR EXISTS "${pypkgdir}")
+  message(STATUS "Uninstalling python package directory ${pypkgdir}")
+  file(REMOVE_RECURSE ${pypkgdir})
+endif()

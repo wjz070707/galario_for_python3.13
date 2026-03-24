@@ -1,0 +1,7 @@
+build/
+*.o
+*.so
+*.a
+*.pyc
+__pycache__/
+.desktop.ini
