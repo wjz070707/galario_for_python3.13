@@ -446,6 +446,16 @@ CudaMemory<dcomplex> copy_input_d(int nx, int ny, const dreal* realdata) {
     t.Elapsed("copy_input_H->D");
     return data_d;
 }
+
+void copy_input_d_into(int nx, int ny, const dreal* realdata, dcomplex* data_d) {
+    GPUTimer t;
+    auto const ncol = ny/2+1;
+    auto const rowsize_real = sizeof(dreal)*ny;
+    auto const rowsize_complex = sizeof(dcomplex)*ncol;
+
+    CCheck(cudaMemcpy2D(data_d, rowsize_complex, realdata, rowsize_real, rowsize_real, nx, cudaMemcpyHostToDevice));
+    t.Elapsed("copy_input_H->D");
+}
 #endif
 
 namespace galario {
@@ -490,6 +500,106 @@ void* _copy_input(int nx, int ny, void* realdata) {
     return copy_input(nx, ny, static_cast<dreal*>(realdata));
 }
 }
+
+namespace {
+
+void copy_input_h_into(int nx, int ny, const dreal* realdata, dcomplex* buffer) {
+    auto real_buffer = reinterpret_cast<dreal*>(buffer);
+    auto const rowsize = 2*(ny/2 + 1);
+    auto const nbytes = sizeof(dreal)*ny;
+#pragma omp parallel for shared(real_buffer, realdata)
+    for (int i = 0; i < nx; ++i) {
+        std::memcpy(&real_buffer[i*rowsize], &realdata[i*ny], nbytes);
+    }
+}
+
+} // anonymous namespace
+
+namespace galario {
+
+struct Chi2ImageContext {
+    const int nx;
+    const int ny;
+    const int nd;
+    const int ncol;
+
+#ifdef __CUDACC__
+    CudaMemory<dreal> u_d;
+    CudaMemory<dreal> v_d;
+    CudaMemory<dreal> vis_obs_re_d;
+    CudaMemory<dreal> vis_obs_im_d;
+    CudaMemory<dreal> weights_d;
+
+    CudaMemory<dreal> urot_d;
+    CudaMemory<dreal> vrot_d;
+    CudaMemory<dcomplex> vis_int_d;
+    CudaMemory<dcomplex> data_d;
+
+    Chi2ImageContext(int nx_, int ny_, int nd_, const dreal* u, const dreal* v,
+                     const dreal* vis_obs_re, const dreal* vis_obs_im, const dreal* weights)
+        : nx(nx_), ny(ny_), nd(nd_), ncol(ny_/2 + 1),
+          u_d(nd_, u), v_d(nd_, v),
+          vis_obs_re_d(nd_, vis_obs_re), vis_obs_im_d(nd_, vis_obs_im), weights_d(nd_, weights),
+          urot_d(nd_), vrot_d(nd_), vis_int_d(nd_), data_d(nx_ * (ny_/2 + 1)) {}
+#else
+    dreal* u;
+    dreal* v;
+    dreal* vis_obs_re;
+    dreal* vis_obs_im;
+    dreal* weights;
+    dreal* urot;
+    dreal* vrot;
+    dcomplex* vis_int;
+    dcomplex* data;
+
+    Chi2ImageContext(int nx_, int ny_, int nd_, const dreal* u_in, const dreal* v_in,
+                     const dreal* vis_obs_re_in, const dreal* vis_obs_im_in, const dreal* weights_in)
+        : nx(nx_), ny(ny_), nd(nd_), ncol(ny_/2 + 1),
+          u(reinterpret_cast<dreal*>(FFTW(alloc_real)(nd_))),
+          v(reinterpret_cast<dreal*>(FFTW(alloc_real)(nd_))),
+          vis_obs_re(reinterpret_cast<dreal*>(FFTW(alloc_real)(nd_))),
+          vis_obs_im(reinterpret_cast<dreal*>(FFTW(alloc_real)(nd_))),
+          weights(reinterpret_cast<dreal*>(FFTW(alloc_real)(nd_))),
+          urot(reinterpret_cast<dreal*>(FFTW(alloc_real)(nd_))),
+          vrot(reinterpret_cast<dreal*>(FFTW(alloc_real)(nd_))),
+          vis_int(reinterpret_cast<dcomplex*>(FFTW(alloc_complex)(nd_))),
+          data(reinterpret_cast<dcomplex*>(FFTW(alloc_complex)(nx_ * (ny_/2 + 1)))) {
+        if (!u || !v || !vis_obs_re || !vis_obs_im || !weights || !urot || !vrot || !vis_int || !data) {
+            throw std::bad_alloc();
+        }
+        std::memcpy(u, u_in, sizeof(dreal) * nd_);
+        std::memcpy(v, v_in, sizeof(dreal) * nd_);
+        std::memcpy(vis_obs_re, vis_obs_re_in, sizeof(dreal) * nd_);
+        std::memcpy(vis_obs_im, vis_obs_im_in, sizeof(dreal) * nd_);
+        std::memcpy(weights, weights_in, sizeof(dreal) * nd_);
+    }
+
+    ~Chi2ImageContext() {
+        galario_free(u);
+        galario_free(v);
+        galario_free(vis_obs_re);
+        galario_free(vis_obs_im);
+        galario_free(weights);
+        galario_free(urot);
+        galario_free(vrot);
+        galario_free(vis_int);
+        galario_free(data);
+    }
+#endif
+};
+
+Chi2ImageContext* create_chi2_image_context(int nx, int ny, int nd, const dreal* u, const dreal* v,
+                                            const dreal* vis_obs_re, const dreal* vis_obs_im,
+                                            const dreal* weights) {
+    CHECK_INPUTXY(nx, ny);
+    return new Chi2ImageContext(nx, ny, nd, u, v, vis_obs_re, vis_obs_im, weights);
+}
+
+void destroy_chi2_image_context(Chi2ImageContext* context) {
+    delete context;
+}
+
+} // namespace galario
 
 #ifdef __CUDACC__
 void fft_d(int nx, int ny, dcomplex* data_d) {
@@ -1319,6 +1429,39 @@ inline void sample_d(int nx, int ny, dcomplex* data_d, const dreal v_origin, dre
 
     t_start.Elapsed("sample_tot");
 }
+
+inline void sample_d_cached(galario::Chi2ImageContext* context, const dreal v_origin, dreal dRA, dreal dDec, dreal duv, const dreal PA)
+{
+    GPUTimer t_start;
+    GPUTimer t;
+
+    auto const nthreads = tpb * tpb;
+    dreal dRArot = 0.;
+    dreal dDecrot = 0.;
+
+    if (PA==0.) {
+        dRArot = dRA;
+        dDecrot = dDec;
+        CCheck(cudaMemcpy(context->urot_d.ptr, context->u_d.ptr, context->u_d.nbytes, cudaMemcpyDeviceToDevice));
+        CCheck(cudaMemcpy(context->vrot_d.ptr, context->v_d.ptr, context->v_d.nbytes, cudaMemcpyDeviceToDevice));
+        t.Elapsed("sample_cached::copy_uvrot_D->D");
+    } else {
+        const dreal cos_PA = cos(PA);
+        const dreal sin_PA = sin(PA);
+
+        uv_rotate_d<<<context->nd/nthreads +1, nthreads>>>(cos_PA, sin_PA, context->nd, context->u_d.ptr, context->v_d.ptr, context->urot_d.ptr, context->vrot_d.ptr);
+        uv_rotate_core(cos_PA, sin_PA, dRA, dDec, dRArot, dDecrot);
+        t.Elapsed("sample_cached::uv_rotate");
+    }
+
+    shift_d<<<dim3(context->nx/2/tpb+1, context->ny/2/tpb+1), dim3(tpb, tpb)>>>(context->nx, context->ny, context->data_d.ptr); t.Elapsed("sample_cached::1st_shift");
+    fft_d(context->nx, context->ny, context->data_d.ptr); t.Elapsed("sample_cached::FFT");
+    shift_axis0_d<<<dim3(context->nx/2/tpb+1, context->ncol/2/tpb+1), dim3(tpb, tpb)>>>(context->nx, context->ncol, context->data_d.ptr); t.Elapsed("sample_cached::2nd_shift");
+    interpolate_d<<<context->nd / nthreads + 1, nthreads>>>(context->nx, context->ncol, context->data_d.ptr, v_origin, context->nd, context->urot_d.ptr, context->vrot_d.ptr, duv, context->vis_int_d.ptr); t.Elapsed("sample_cached::interpolate");
+    apply_phase_sampled_d<<<context->nd / nthreads + 1, nthreads>>>(dRArot, dDecrot, context->nd, context->urot_d.ptr, context->vrot_d.ptr, context->vis_int_d.ptr); t.Elapsed("sample_cached::apply_phase_sampled");
+
+    t_start.Elapsed("sample_cached_tot");
+}
 #else
 
 void sample_h(int nx, int ny, dcomplex* data, const dreal v_origin, dreal dRA, dreal dDec, int nd, dreal duv, const dreal PA, const dreal* u, const dreal* v, dcomplex* vis_int) {
@@ -1347,6 +1490,24 @@ void sample_h(int nx, int ny, dcomplex* data, const dreal v_origin, dreal dRA, d
     galario::galario_free(urot);
     galario::galario_free(vrot);
     t_start.Elapsed("sample_tot");
+}
+
+void sample_h_cached(galario::Chi2ImageContext* context, const dreal v_origin, dreal dRA, dreal dDec, dreal duv, const dreal PA) {
+    CPUTimer t_start;
+
+    dreal dRArot;
+    dreal dDecrot;
+
+    OPENMPTIME(shift_h(context->nx, context->ny, context->data), "sample_cached::1st_shift");
+    OPENMPTIME(fft_h(context->nx, context->ny, context->data), "sample_cached::FFT");
+    OPENMPTIME(shift_axis0_h(context->nx, context->ncol, context->data), "sample_cached::2nd_shift");
+
+    uv_rotate_h(PA, dRA, dDec, &dRArot, &dDecrot, context->nd, context->u, context->v, context->urot, context->vrot);
+
+    OPENMPTIME(interpolate_h(context->nx, context->ncol, context->data, v_origin, context->nd, context->urot, context->vrot, duv, context->vis_int), "sample_cached::interpolate");
+    OPENMPTIME(apply_phase_sampled_h(dRArot, dDecrot, context->nd, context->urot, context->vrot, context->vis_int), "sample_cached::apply_phase_sampled");
+
+    t_start.Elapsed("sample_cached_tot");
 }
 
 #endif
@@ -1610,6 +1771,40 @@ dreal _chi2_image(int nx, int ny, void* realdata, const dreal v_origin, dreal dR
     return chi2_image(nx, ny, static_cast<dreal*>(realdata), v_origin, dRA, dDec, duv, PA, nd, static_cast<dreal*>(u),
                  static_cast<dreal*>(v), static_cast<dreal*>(vis_obs_re), static_cast<dreal*>(vis_obs_im),
                  static_cast<dreal*>(weights));
+}
+
+dreal chi2_image_cached(Chi2ImageContext* context, const dreal* realdata, const dreal v_origin, dreal dRA, dreal dDec, dreal duv, dreal PA) {
+    CPUTimer t_start;
+
+    CHECK_INPUTXY(context->nx, context->ny);
+    dreal chi2 = 0;
+#ifdef __CUDACC__
+    copy_input_d_into(context->nx, context->ny, realdata, context->data_d.ptr);
+    sample_d_cached(context, v_origin, dRA, dDec, duv, PA);
+    chi2 = reduce_chi2_d(context->nd, context->vis_obs_re_d.ptr, context->vis_obs_im_d.ptr, context->vis_int_d.ptr, context->weights_d.ptr);
+#else
+    copy_input_h_into(context->nx, context->ny, realdata, context->data);
+    sample_h_cached(context, v_origin, dRA, dDec, duv, PA);
+    chi2 = reduce_chi2(context->nd, context->vis_obs_re, context->vis_obs_im, context->vis_int, context->weights);
+#endif
+    t_start.Elapsed("chi2_image_cached_tot");
+    flush_timing();
+
+    return chi2;
+}
+
+void* _create_chi2_image_context(int nx, int ny, int nd, void* u, void* v, void* vis_obs_re, void* vis_obs_im, void* weights) {
+    return create_chi2_image_context(nx, ny, nd, static_cast<dreal*>(u), static_cast<dreal*>(v),
+                                     static_cast<dreal*>(vis_obs_re), static_cast<dreal*>(vis_obs_im),
+                                     static_cast<dreal*>(weights));
+}
+
+void _destroy_chi2_image_context(void* context) {
+    destroy_chi2_image_context(static_cast<Chi2ImageContext*>(context));
+}
+
+dreal _chi2_image_cached(void* context, void* realdata, const dreal v_origin, dreal dRA, dreal dDec, dreal duv, dreal PA) {
+    return chi2_image_cached(static_cast<Chi2ImageContext*>(context), static_cast<dreal*>(realdata), v_origin, dRA, dDec, duv, PA);
 }
 
 dreal chi2_profile(int nr, dreal *const intensity, dreal Rmin, dreal dR, dreal dxy, int nxy, dreal inc, dreal dRA,

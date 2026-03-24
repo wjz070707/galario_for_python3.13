@@ -33,6 +33,11 @@ void _sample_image(int nx, int ny, void* data, dreal v_origin, dreal dRA, dreal 
 dreal _chi2_profile(int nr, void *intensity, dreal Rmin, dreal dR, dreal dxy, int nxy, dreal inc, dreal dRA, dreal dDec,
                     dreal duv, dreal PA, int nd, void *u, void *v, void *vis_obs_re, void *vis_obs_im, void *weights);
 dreal _chi2_image(int nx, int ny, void* data, dreal v_origin, dreal dRA, dreal dDec, dreal duv, dreal PA, int nd, void* u, void* v, void* vis_obs_re, void* vis_obs_im, void* weights);
+void* _create_chi2_image_context(int nx, int ny, int nd, void* u, void* v,
+                                void* vis_obs_re, void* vis_obs_im, void* weights);
+void _destroy_chi2_image_context(void* context);
+dreal _chi2_image_cached(void* context, void* data, dreal v_origin, dreal dRA, dreal dDec,
+                         dreal duv, dreal PA);
 void _sweep(int nr, void *intensity, dreal Rmin, dreal dR, int nxy, dreal dxy, dreal inc, void *image);
 void _uv_rotate(dreal PA, dreal dRA, dreal dDec, void* dRArot, void* dDecrot, int nd, void* u, void* v, void* urot, void* vrot);
 
