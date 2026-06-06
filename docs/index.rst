@@ -3,7 +3,7 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-.. _email: mtazzari@ast.cam.ac.uk
+.. _maintainer: https://github.com/wjz070707
 
 
 .. image:: images/galario.jpg
@@ -15,11 +15,16 @@
 |galario| |version|
 ===================
 
---------------
-
-
 **GPU Accelerated Library for Analysing Radio Interferometer Observations**
 ---------------------------------------------------------------------------
+
+.. important::
+
+    **Context reuse is the central performance feature of GALARIO 1.3.**
+    Create one ``create_image_context(...)`` before an optimizer or MCMC loop
+    and pass it to every ``chi2_image`` or ``chi2_profile`` call. The Context
+    keeps fixed observations, transform plans, and CPU/CUDA workspaces alive.
+    Creating it inside the likelihood defeats this acceleration.
 
 |galario| is a library that exploits the computing power of modern graphic cards (GPUs) to accelerate the comparison of model
 predictions to radio interferometer observations. Namely, it speeds up the computation of the synthetic visibilities
@@ -47,7 +52,8 @@ relevant equations and the algorithm implementation.
 
 .. Here we do not aim to summarize the vast literature about Radio Interferometry, but we refer the interested reader to the `Synthesis Imaging in Radio Astronomy II <http://aspbooks.org/a/volumes/table_of_contents/180>`_ book.
 
-|galario| is actively developed on `GitHub <https://github.com/mtazzari/galario/>`_
+The maintained 1.3 line is developed on
+`GitHub <https://github.com/wjz070707/galario_for_python3.13>`_
 and has already been employed in :doc:`these publications <publications>`.
 
 .. note::
@@ -67,7 +73,8 @@ Useful recipes for the CPU/GPU management and the model image creation: see the 
 
 Detailed documentation of each Python and C++ function: see the :doc:`Python-API <py-api>` and :doc:`C++ API <C++-api>` pages.
 
-Stuck on an issue? Check the :doc:`Frequently Asked Questions <FAQ>` page, or send me an `email`_.
+Stuck on an issue? Check the :doc:`Frequently Asked Questions <FAQ>` page or
+contact the current `maintainer`_.
 
 License and Attribution
 -----------------------
@@ -97,7 +104,8 @@ version of |galario| used in a paper.
 
 |galario| is free software licensed under the LGPLv3 License. For more details see the :doc:`LICENSE <license>`.
 
-© Copyright 2017-2020 Marco Tazzari, Frederik Beaujean, Leonardo Testi and contributors.
+Copyright 2017-2020 Marco Tazzari, Frederik Beaujean, Leonardo Testi and
+contributors. Copyright 2026 wjz070707.
 
 Contributors
 ------------
@@ -118,6 +126,7 @@ Contents
     Basic Usage <basic_usage>
     Getting Started <quickstart>
     emcee 3 Tutorial <emcee_tutorial>
+    Reproducible Research <reproducibility>
     Tech specs <tech-specs>
     Architecture <architecture>
     Cookbook <cookbook>

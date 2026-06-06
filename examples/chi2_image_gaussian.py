@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Fit the documented uv table with GALARIO's image API and emcee 3."""
+"""Fit the documented uv table with GALARIO's image API and emcee 3.
+
+Performance-critical design: one Context is created before sampling and reused
+for every vectorized walker batch. Do not move Context creation into the
+likelihood function; that repeats observation transfers and setup work.
+"""
 
 from __future__ import annotations
 
@@ -51,46 +56,55 @@ LABELS = [
 ]
 
 
-def gaussian_component(
-    log10_f0: float,
-    sigma_arcsec: float,
+def gaussian_components(
+    log10_f0,
+    sigma_arcsec,
     dxy: float,
 ) -> np.ndarray:
-    """Return [[central pixel flux, sigma]] for the component image API."""
+    """Return one Gaussian component row per parameter vector."""
+    log10_f0 = np.asarray(log10_f0)
+    sigma_arcsec = np.asarray(sigma_arcsec)
     central_brightness = 10.0**log10_f0  # Jy/sr
     central_pixel_flux = central_brightness * dxy**2  # Jy/pixel
-    return np.array(
-        [[central_pixel_flux, sigma_arcsec * arcsec]],
-        dtype=np.float64,
+    return np.column_stack(
+        (central_pixel_flux, sigma_arcsec * arcsec)
+    ).astype(
+        np.float64, copy=False
     )
 
 
-def log_prior(parameters: np.ndarray) -> float:
+def log_prior(parameters: np.ndarray) -> np.ndarray:
+    parameters = np.atleast_2d(parameters)
     inside = (
         (parameters >= PARAMETER_RANGES[:, 0])
         & (parameters <= PARAMETER_RANGES[:, 1])
     )
-    return 0.0 if np.all(inside) else -np.inf
+    return np.where(np.all(inside, axis=1), 0.0, -np.inf)
 
 
 def make_log_probability(backend, image_context, dxy: float):
     def log_probability(parameters: np.ndarray) -> float:
+        parameters = np.atleast_2d(parameters)
         prior = log_prior(parameters)
-        if not np.isfinite(prior):
-            return -np.inf
-
-        log10_f0, sigma, inc, pa, dra, ddec = parameters
-        chi2 = backend.chi2_image(
-            ctx=image_context,
-            dxy=dxy,
-            gauss_params=gaussian_component(log10_f0, sigma, dxy),
-            inc=inc * deg,
-            PA=pa * deg,
-            dRA=dra * arcsec,
-            dDec=ddec * arcsec,
-            origin="lower",
-        )
-        return prior - 0.5 * chi2
+        result = np.full(len(parameters), -np.inf)
+        valid = np.isfinite(prior)
+        if np.any(valid):
+            selected = parameters[valid]
+            log10_f0, sigma, inc, pa, dra, ddec = selected.T
+            chi2 = backend.chi2_image(
+                ctx=image_context,
+                dxy=dxy,
+                gauss_params_batch=gaussian_components(
+                    log10_f0, sigma, dxy
+                ),
+                inc_batch=inc * deg,
+                PA_batch=pa * deg,
+                dRA_batch=dra * arcsec,
+                dDec_batch=ddec * arcsec,
+                origin="lower",
+            )
+            result[valid] = prior[valid] - 0.5 * chi2
+        return result
 
     return log_probability
 
@@ -171,9 +185,13 @@ def main() -> None:
         f"image context backend: requested={image_context.requested_backend}, "
         f"resolved={image_context.resolved_backend}"
     )
+    print(
+        "reusing one context avoids repeated observation transfers "
+        "and FFT workspace setup"
+    )
 
     # Demonstrate sample_image and verify it agrees with contextual chi2_image.
-    initial_gaussian = gaussian_component(
+    initial_gaussian = gaussian_components(
         INITIAL_POSITION[0], INITIAL_POSITION[1], dxy
     )
     initial_vis = backend.sample_image(
@@ -217,7 +235,10 @@ def main() -> None:
         (WALKERS, len(INITIAL_POSITION))
     )
     sampler = EnsembleSampler(
-        WALKERS, len(INITIAL_POSITION), log_probability
+        WALKERS,
+        len(INITIAL_POSITION),
+        log_probability,
+        vectorize=True,
     )
     sampler.run_mcmc(positions, STEPS, progress=SHOW_PROGRESS)
 

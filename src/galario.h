@@ -3,6 +3,7 @@
 * Gpu Accelerated Library for Analysing Radio Interferometer Observations     *
 *                                                                             *
 * Copyright (C) 2017-2020, Marco Tazzari, Frederik Beaujean, Leonardo Testi.  *
+* Copyright (C) 2026, wjz070707.                                             *
 *                                                                             *
 * This program is free software: you can redistribute it and/or modify        *
 * it under the terms of the Lesser GNU General Public License as published by *
@@ -14,7 +15,7 @@
 * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                        *
 *                                                                             *
 * For more details see the LICENSE file.                                      *
-* For documentation see https://mtazzari.github.io/galario/                   *
+* Maintained at https://github.com/wjz070707/galario_for_python3.13           *
 ******************************************************************************/
 
 #pragma once
@@ -87,6 +88,15 @@ dreal chi2_profile_from_context(Chi2ImageContext* context,
                                 dreal Rmin, dreal dR, int nxy, dreal dxy,
                                 dreal inc, dreal dRA, dreal dDec,
                                 dreal duv, dreal PA);
+void chi2_profile_from_context_batch(Chi2ImageContext* context,
+                                     int nr, const dreal* intensity_batch,
+                                     int batch_size,
+                                     dreal Rmin, dreal dR, int nxy, dreal dxy,
+                                     const dreal* inc_batch,
+                                     const dreal* dRA_batch,
+                                     const dreal* dDec_batch,
+                                     dreal duv, const dreal* PA_batch,
+                                     dreal* chi2_out);
 
 void sweep(int nr, const dreal* intensity, dreal Rmin, dreal dR, int nxy, dreal dxy, dreal inc, dcomplex *image);
 void uv_rotate(dreal PA, dreal dRA, dreal dDec, dreal* dRArot, dreal* dDecrot, int nd, const dreal* u, const dreal* v, dreal* urot, dreal* vrot);

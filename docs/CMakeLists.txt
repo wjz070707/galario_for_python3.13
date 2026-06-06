@@ -52,6 +52,15 @@ add_custom_target(docs ALL
         "${SPHINX_HTML_DIR}"
     COMMENT "Building HTML documentation with Sphinx")
 
+# conf.py imports the build-tree Python package to obtain the current version
+# and API. Build its native modules before Sphinx starts importing galario.
+if(TARGET _nanobind_double)
+    add_dependencies(docs _nanobind_double)
+endif()
+if(TARGET _nanobind_double_cuda)
+    add_dependencies(docs _nanobind_double_cuda)
+endif()
+
 # sphinx can fail if it doesn't find the theme. This should not prevent building
 # the actual source code, so docs have to be built explicitly
 set_target_properties(docs PROPERTIES EXCLUDE_FROM_ALL TRUE)

@@ -3,6 +3,7 @@
 * Gpu Accelerated Library for Analysing Radio Interferometer Observations     *
 *                                                                             *
 * Copyright (C) 2017-2020, Marco Tazzari, Frederik Beaujean, Leonardo Testi.  *
+* Copyright (C) 2026, wjz070707.                                             *
 *                                                                             *
 * This program is free software: you can redistribute it and/or modify        *
 * it under the terms of the Lesser GNU General Public License as published by *
@@ -14,11 +15,12 @@
 * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                        *
 *                                                                             *
 * For more details see the LICENSE file.                                      *
-* For documentation see https://mtazzari.github.io/galario/                   *
+* Maintained at https://github.com/wjz070707/galario_for_python3.13           *
 ******************************************************************************/
 
 #include "galario.h"
 #include "galario_internal.h"
+#include "galario_profile_common.h"
 #include "galario_py.h"
 
 // full function makes code hard to read
@@ -1037,6 +1039,43 @@ dreal chi2_image_from_context(Chi2ImageContext* context, const dreal* realdata, 
     flush_timing();
 
     return chi2;
+}
+
+void chi2_profile_from_context_batch(
+    Chi2ImageContext* context,
+    int nr,
+    const dreal* intensity_batch,
+    int batch_size,
+    dreal r_min,
+    dreal dr,
+    int nxy,
+    dreal dxy,
+    const dreal* inc_batch,
+    const dreal* dRA_batch,
+    const dreal* dDec_batch,
+    dreal duv,
+    const dreal* PA_batch,
+    dreal* chi2_out
+) {
+    std::vector<dcomplex> packed_image(
+        static_cast<size_t>(nxy) * (nxy / 2 + 1)
+    );
+    for (int idx = 0; idx < batch_size; ++idx) {
+        galario_profile_detail::sweep_image(
+            nr,
+            intensity_batch + static_cast<size_t>(idx) * nr,
+            r_min, dr, nxy, dxy, inc_batch[idx],
+            packed_image.data()
+        );
+        std::vector<dreal> image =
+            galario_profile_detail::unpack_image(
+                nxy, packed_image.data()
+            );
+        chi2_out[idx] = chi2_image_from_context(
+            context, image.data(), 1.0,
+            dRA_batch[idx], dDec_batch[idx], duv, PA_batch[idx]
+        );
+    }
 }
 
 namespace {

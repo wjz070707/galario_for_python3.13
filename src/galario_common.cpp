@@ -1,3 +1,10 @@
+/*
+ * GALARIO
+ * Copyright (C) 2017-2020, Marco Tazzari, Frederik Beaujean, Leonardo Testi.
+ * Copyright (C) 2026, wjz070707.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
+
 #include "galario_internal.h"
 
 #include <algorithm>

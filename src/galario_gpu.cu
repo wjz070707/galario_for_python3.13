@@ -3,6 +3,7 @@
 * Gpu Accelerated Library for Analysing Radio Interferometer Observations     *
 *                                                                             *
 * Copyright (C) 2017-2020, Marco Tazzari, Frederik Beaujean, Leonardo Testi.  *
+* Copyright (C) 2026, wjz070707.                                             *
 *                                                                             *
 * This program is free software: you can redistribute it and/or modify        *
 * it under the terms of the Lesser GNU General Public License as published by *
@@ -14,11 +15,12 @@
 * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                        *
 *                                                                             *
 * For more details see the LICENSE file.                                      *
-* For documentation see https://mtazzari.github.io/galario/                   *
+* Maintained at https://github.com/wjz070707/galario_for_python3.13           *
 ******************************************************************************/
 
 #include "galario.h"
 #include "galario_internal.h"
+#include "galario_profile_common.h"
 #include "galario_py.h"
 
 // full function makes code hard to read
@@ -537,6 +539,107 @@ __global__ void rasterize_component_image_batch_d(int nx_model, int ny_model, dr
     out[static_cast<size_t>(i) * ny_out + j] = value;
 }
 
+__global__ void rasterize_profile_image_batch_d(
+    int nr,
+    const dreal* intensity_batch,
+    int batch_size,
+    dreal r_min,
+    dreal dr,
+    int nxy,
+    dreal dxy,
+    const dreal* inc_batch,
+    int nx_out,
+    int ny_out,
+    dreal* out_batch
+) {
+    int const batch_idx = blockIdx.z;
+    int const i = blockDim.y * blockIdx.y + threadIdx.y;
+    int const j = blockDim.x * blockIdx.x + threadIdx.x;
+    if (batch_idx >= batch_size || i >= nx_out || j >= ny_out) {
+        return;
+    }
+
+    dreal* const out =
+        out_batch + static_cast<size_t>(batch_idx) * nx_out * ny_out;
+    int const row_offset = (nx_out - nxy) / 2;
+    int const col_offset = (ny_out - nxy) / 2;
+    int const ii = i - row_offset;
+    int const jj = j - col_offset;
+    if (ii < 0 || ii >= nxy || jj < 0 || jj >= nxy) {
+        out[static_cast<size_t>(i) * ny_out + j] = 0.0;
+        return;
+    }
+
+    dreal const* const intensity =
+        intensity_batch + static_cast<size_t>(batch_idx) * nr;
+    int const rmax = min(
+        static_cast<int>(ceil((r_min + nr * dr) / dxy)),
+        nxy / 2
+    );
+    int const offset = nxy / 2 - rmax;
+    int const local_i = ii - offset;
+    int const local_j = jj - offset;
+    if (
+        local_i < 0 || local_i >= 2 * rmax
+        || local_j < 0 || local_j >= 2 * rmax
+    ) {
+        out[static_cast<size_t>(i) * ny_out + j] = 0.0;
+        return;
+    }
+
+    dreal const sr_to_px = dxy * dxy;
+    if (ii == nxy / 2 && jj == nxy / 2) {
+        int const inner_index =
+            static_cast<int>(floor((dxy / 2.0 - r_min) / dr));
+        dreal flux = 0.0;
+        for (int k = 1; k < inner_index; ++k) {
+            flux += (r_min + dr * k) * intensity[k];
+        }
+        flux *= 2.0;
+        flux += r_min * intensity[0]
+            + (r_min + inner_index * dr) * intensity[inner_index];
+        flux *= dr;
+
+        dreal const interpolated = (
+            intensity[inner_index + 1] - intensity[inner_index]
+        ) / dr * (
+            dxy / 2.0 - (r_min + dr * inner_index)
+        ) + intensity[inner_index];
+        flux += (
+            (r_min + inner_index * dr) * intensity[inner_index]
+            + dxy / 2.0 * interpolated
+        ) * (
+            dxy / 2.0 - (r_min + inner_index * dr)
+        );
+        dreal const area =
+            (dxy / 2.0) * (dxy / 2.0) - r_min * r_min;
+        out[static_cast<size_t>(i) * ny_out + j] =
+            sr_to_px * flux / area;
+        return;
+    }
+
+    dreal const x = (rmax - local_j) * dxy;
+    dreal const y = (rmax - local_i) * dxy;
+    dreal const cos_inc = cos(inc_batch[batch_idx]);
+    dreal const radius = sqrt(
+        (x / cos_inc) * (x / cos_inc) + y * y
+    );
+    int const radial_index = max(
+        static_cast<int>(floor((radius - r_min) / dr)),
+        0
+    );
+    dreal value = 0.0;
+    if (radial_index <= nr - 2) {
+        value = sr_to_px * (
+            intensity[radial_index]
+            + (radius - radial_index * dr - r_min)
+                * (intensity[radial_index + 1] - intensity[radial_index])
+                / dr
+        );
+    }
+    out[static_cast<size_t>(i) * ny_out + j] = value;
+}
+
 } // anonymous namespace
 
 namespace galario {
@@ -587,10 +690,12 @@ struct Chi2ImageContext {
     std::unique_ptr<CudaMemory<dreal>> batch_gauss_params_d;
     std::unique_ptr<CudaMemory<dreal>> batch_ring_params_d;
     std::unique_ptr<CudaMemory<dreal>> batch_arc_params_d;
+    std::unique_ptr<CudaMemory<dreal>> batch_intensity_d;
     int batch_workspace_capacity;
     int batch_gauss_capacity;
     int batch_ring_capacity;
     int batch_arc_capacity;
+    int batch_intensity_capacity;
     int cached_fft_chunk_request;
     int cached_fft_chunk_size;
     cufftHandle batch_fft_plan;
@@ -610,6 +715,7 @@ struct Chi2ImageContext {
           vis_obs_re_d(nd_, vis_obs_re), vis_obs_im_d(nd_, vis_obs_im), weights_d(nd_, weights),
           urot_d(nd_), vrot_d(nd_), vis_int_d(nd_), data_d(work_nx * work_ncol),
           batch_workspace_capacity(0), batch_gauss_capacity(0), batch_ring_capacity(0), batch_arc_capacity(0),
+          batch_intensity_capacity(0),
           cached_fft_chunk_request(0), cached_fft_chunk_size(0),
           batch_fft_plan_size(0), batch_fft_plan_initialized(false) {}
 
@@ -1916,22 +2022,16 @@ dreal chi2_image_from_context_components(Chi2ImageContext* context, dreal dxy,
                                    int narcs, const dreal* arc_params,
                                    dreal inc, const dreal v_origin,
                                    dreal dRA, dreal dDec, dreal duv, dreal PA) {
-    CPUTimer t_start;
-
-    CHECK_INPUTXY(context->nx, context->ny);
-    galario_internal::rasterize_component_image(context->nx, context->ny, dxy,
-                              ngauss, gauss_params,
-                              nrings, ring_params,
-                              narcs, arc_params,
-                              inc,
-                              context->backend == galario::BACKEND_NUFFT ? context->work_nx : context->nx,
-                              context->backend == galario::BACKEND_NUFFT ? context->work_ny : context->ny,
-                              context->model_image_h.data());
-
-    dreal chi2 = chi2_image_from_context_rasterized(context, v_origin, dRA, dDec, duv, PA);
-    t_start.Elapsed("chi2_image_from_context_components_tot");
-    flush_timing();
-
+    // Reuse the GPU batch pipeline even for one model. This keeps component
+    // rasterization off the CPU and avoids a full image transfer per call.
+    dreal chi2 = 0.0;
+    chi2_image_from_context_components_batch(
+        context, dxy, 1,
+        ngauss, gauss_params,
+        nrings, ring_params,
+        narcs, arc_params,
+        &inc, v_origin, &dRA, &dDec, duv, &PA, &chi2
+    );
     return chi2;
 }
 
@@ -1948,7 +2048,7 @@ void chi2_image_from_context_components_batch(Chi2ImageContext* context, dreal d
     int const effective_backend = resolve_batched_image_backend(context->nx, context->ny, context->nd,
                                                                 batch_size, context->requested_backend);
 
-    if (effective_backend == galario::BACKEND_DFT && batch_size > 1) {
+    if (effective_backend == galario::BACKEND_DFT) {
         chi2_image_from_context_components_batch_direct_d(context, dxy, batch_size,
                                                     ngauss, gauss_params_batch,
                                                     nrings, ring_params_batch,
@@ -1960,7 +2060,7 @@ void chi2_image_from_context_components_batch(Chi2ImageContext* context, dreal d
         flush_timing();
         return;
     }
-    if ((effective_backend == galario::BACKEND_FFT || effective_backend == galario::BACKEND_NUFFT) && batch_size > 1) {
+    if (effective_backend == galario::BACKEND_FFT || effective_backend == galario::BACKEND_NUFFT) {
         chi2_image_from_context_components_batch_fft_like_d(context, dxy, batch_size,
                                                       ngauss, gauss_params_batch,
                                                       nrings, ring_params_batch,
@@ -1995,6 +2095,215 @@ void chi2_image_from_context_components_batch(Chi2ImageContext* context, dreal d
     }
 
     t_start.Elapsed("chi2_image_from_context_components_tot");
+    flush_timing();
+}
+
+void chi2_profile_from_context_batch(
+    Chi2ImageContext* context,
+    int nr,
+    const dreal* intensity_batch,
+    int batch_size,
+    dreal r_min,
+    dreal dr,
+    int nxy,
+    dreal dxy,
+    const dreal* inc_batch,
+    const dreal* dRA_batch,
+    const dreal* dDec_batch,
+    dreal duv,
+    const dreal* PA_batch,
+    dreal* chi2_out
+) {
+    CPUTimer t_start;
+    CHECK_INPUTXY(nxy, nxy);
+    galario_profile_detail::check_sweep_inputs(
+        nr, r_min, dr, nxy, dxy
+    );
+    if (nxy != context->nx || nxy != context->ny) {
+        throw std::invalid_argument(
+            "Profile image size does not match context"
+        );
+    }
+
+    int const effective_backend = resolve_batched_image_backend(
+        nxy, nxy, context->nd, batch_size, context->requested_backend
+    );
+    int const work_nx =
+        effective_backend == galario::BACKEND_NUFFT
+        ? resolve_padded_size(nxy, context->nufft_oversample)
+        : nxy;
+    int const work_ny = work_nx;
+    int const work_ncol = work_ny / 2 + 1;
+    int const nthreads = tpb * tpb;
+    int const blocks_x = context->nd / nthreads + 1;
+    dreal const duv_backend = duv * nxy / work_nx;
+    int const chunk_size = resolve_fft_batch_chunk_size(
+        context, batch_size
+    );
+
+    std::fill_n(chi2_out, batch_size, dreal{0.0});
+    for (int start = 0; start < batch_size; start += chunk_size) {
+        int const current_batch =
+            std::min(chunk_size, batch_size - start);
+        ensure_fft_batch_workspace(context, current_batch, 0, 0, 0);
+        if (
+            context->batch_intensity_capacity
+            < current_batch * nr
+        ) {
+            context->batch_intensity_d.reset(
+                new CudaMemory<dreal>(
+                    static_cast<size_t>(current_batch) * nr
+                )
+            );
+            context->batch_intensity_capacity = current_batch * nr;
+        }
+
+        for (int local_idx = 0; local_idx < current_batch; ++local_idx) {
+            int const batch_idx = start + local_idx;
+            context->batch_inc_h[local_idx] = inc_batch[batch_idx];
+            context->batch_cos_pa_h[local_idx] = cos(PA_batch[batch_idx]);
+            context->batch_sin_pa_h[local_idx] = sin(PA_batch[batch_idx]);
+            uv_rotate_core(
+                context->batch_cos_pa_h[local_idx],
+                context->batch_sin_pa_h[local_idx],
+                dRA_batch[batch_idx],
+                dDec_batch[batch_idx],
+                context->batch_dRArot_h[local_idx],
+                context->batch_dDecrot_h[local_idx]
+            );
+        }
+
+        context->batch_intensity_d->CopyFromHost(
+            intensity_batch + static_cast<size_t>(start) * nr,
+            static_cast<size_t>(current_batch) * nr
+        );
+        context->batch_inc_d->CopyFromHost(
+            context->batch_inc_h.data(), current_batch
+        );
+        context->batch_cos_pa_d->CopyFromHost(
+            context->batch_cos_pa_h.data(), current_batch
+        );
+        context->batch_sin_pa_d->CopyFromHost(
+            context->batch_sin_pa_h.data(), current_batch
+        );
+        context->batch_dRArot_d->CopyFromHost(
+            context->batch_dRArot_h.data(), current_batch
+        );
+        context->batch_dDecrot_d->CopyFromHost(
+            context->batch_dDecrot_h.data(), current_batch
+        );
+        CCheck(cudaMemset(
+            context->batch_chi2_d->ptr,
+            0,
+            sizeof(dreal) * current_batch
+        ));
+
+        rasterize_profile_image_batch_d<<<
+            dim3(
+                work_ny / tpb + 1,
+                work_nx / tpb + 1,
+                current_batch
+            ),
+            dim3(tpb, tpb)
+        >>>(
+            nr,
+            context->batch_intensity_d->ptr,
+            current_batch,
+            r_min,
+            dr,
+            nxy,
+            dxy,
+            context->batch_inc_d->ptr,
+            work_nx,
+            work_ny,
+            context->batch_model_images_d->ptr
+        );
+
+        if (effective_backend == galario::BACKEND_DFT) {
+            direct_chi2_batch_d<<<
+                dim3(blocks_x, current_batch),
+                nthreads,
+                sizeof(dreal) * nthreads
+            >>>(
+                nxy, nxy,
+                context->batch_model_images_d->ptr,
+                current_batch,
+                1.0,
+                dxy,
+                context->nd,
+                context->u_d.ptr,
+                context->v_d.ptr,
+                context->batch_cos_pa_d->ptr,
+                context->batch_sin_pa_d->ptr,
+                context->batch_dRArot_d->ptr,
+                context->batch_dDecrot_d->ptr,
+                context->vis_obs_re_d.ptr,
+                context->vis_obs_im_d.ptr,
+                context->weights_d.ptr,
+                context->batch_chi2_d->ptr
+            );
+        } else {
+            ensure_fft_batch_plan(context, current_batch);
+            shift_real_batch_d<<<
+                dim3(
+                    work_nx / 2 / tpb + 1,
+                    work_ny / 2 / tpb + 1,
+                    current_batch
+                ),
+                dim3(tpb, tpb)
+            >>>(
+                work_nx, work_ny, current_batch,
+                context->batch_model_images_d->ptr
+            );
+            CUFFTCheck(CUFFTEXEC(
+                context->batch_fft_plan,
+                context->batch_model_images_d->ptr,
+                context->batch_fft_images_d->ptr
+            ));
+            shift_axis0_batch_d<<<
+                dim3(
+                    work_nx / 2 / tpb + 1,
+                    work_ncol / tpb + 1,
+                    current_batch
+                ),
+                dim3(tpb, tpb)
+            >>>(
+                work_nx, work_ncol, current_batch,
+                context->batch_fft_images_d->ptr
+            );
+            interpolate_chi2_batch_d<<<
+                dim3(blocks_x, current_batch),
+                nthreads,
+                sizeof(dreal) * nthreads
+            >>>(
+                work_nx,
+                work_ncol,
+                context->batch_fft_images_d->ptr,
+                current_batch,
+                1.0,
+                context->nd,
+                context->u_d.ptr,
+                context->v_d.ptr,
+                duv_backend,
+                effective_backend == galario::BACKEND_NUFFT,
+                context->batch_cos_pa_d->ptr,
+                context->batch_sin_pa_d->ptr,
+                context->batch_dRArot_d->ptr,
+                context->batch_dDecrot_d->ptr,
+                context->vis_obs_re_d.ptr,
+                context->vis_obs_im_d.ptr,
+                context->weights_d.ptr,
+                context->batch_chi2_d->ptr
+            );
+        }
+
+        CCheck(cudaDeviceSynchronize());
+        context->batch_chi2_d->RetrieveCount(
+            chi2_out + start, current_batch
+        );
+    }
+
+    t_start.Elapsed("chi2_profile_from_context_batch_tot");
     flush_timing();
 }
 }

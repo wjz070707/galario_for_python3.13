@@ -1,3 +1,10 @@
+/*
+ * GALARIO
+ * Copyright (C) 2017-2020, Marco Tazzari, Frederik Beaujean, Leonardo Testi.
+ * Copyright (C) 2026, wjz070707.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
+
 #include "galario.h"
 #include "galario_internal.h"
 #include "galario_profile_common.h"
@@ -691,20 +698,13 @@ dreal chi2_profile_from_context(
     dreal duv,
     dreal pa
 ) {
-    // A profile context uses the FFT image path: rasterize the radial model,
-    // then reuse the context's observations, transform plan, and work buffers.
-    std::vector<dcomplex> packed_image(
-        static_cast<size_t>(nxy) * (nxy / 2 + 1)
+    dreal chi2 = 0.0;
+    chi2_profile_from_context_batch(
+        context, nr, intensity, 1,
+        r_min, dr, nxy, dxy,
+        &inc, &dra, &ddec, duv, &pa, &chi2
     );
-    sweep(
-        nr, intensity, r_min, dr, nxy, dxy, inc,
-        packed_image.data()
-    );
-    std::vector<dreal> image =
-        galario_profile_detail::unpack_image(nxy, packed_image.data());
-    return chi2_image_from_context(
-        context, image.data(), 1.0, dra, ddec, duv, pa
-    );
+    return chi2;
 }
 
 dreal _chi2_profile(

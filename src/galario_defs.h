@@ -3,6 +3,7 @@
 * Gpu Accelerated Library for Analysing Radio Interferometer Observations     *
 *                                                                             *
 * Copyright (C) 2017-2020, Marco Tazzari, Frederik Beaujean, Leonardo Testi.  *
+* Copyright (C) 2026, wjz070707.                                             *
 *                                                                             *
 * This program is free software: you can redistribute it and/or modify        *
 * it under the terms of the Lesser GNU General Public License as published by *
@@ -14,7 +15,7 @@
 * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                        *
 *                                                                             *
 * For more details see the LICENSE file.                                      *
-* For documentation see https://mtazzari.github.io/galario/                   *
+* Maintained at https://github.com/wjz070707/galario_for_python3.13           *
 ******************************************************************************/
 
 #pragma once

@@ -1,3 +1,10 @@
+/*
+ * GALARIO
+ * Copyright (C) 2017-2020, Marco Tazzari, Frederik Beaujean, Leonardo Testi.
+ * Copyright (C) 2026, wjz070707.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
+
 #include <nanobind/nanobind.h>
 #include <nanobind/ndarray.h>
 #include <nanobind/stl/complex.h>
@@ -380,6 +387,56 @@ NB_MODULE(GALARIO_NB_MODULE_NAME, m) {
           "nxy"_a, "dxy"_a,
           "dRA"_a = 0.0, "dDec"_a = 0.0,
           "PA"_a = 0.0, "inc"_a = 0.0);
+
+    m.def("_chi2_profile_from_context_batch",
+          [](NBChi2ImageContext &ctx,
+             const RealArray2D &intensity_batch,
+             double Rmin,
+             double dR,
+             int nxy,
+             double dxy,
+             const RealArray1D &inc_batch,
+             const RealArray1D &dRA_batch,
+             const RealArray1D &dDec_batch,
+             const RealArray1D &PA_batch) {
+              size_t const batch_size = intensity_batch.shape(0);
+              if (
+                  inc_batch.shape(0) != batch_size
+                  || dRA_batch.shape(0) != batch_size
+                  || dDec_batch.shape(0) != batch_size
+                  || PA_batch.shape(0) != batch_size
+              ) {
+                  throw std::invalid_argument(
+                      "Profile batch parameter arrays must match batch size"
+                  );
+              }
+              if (nxy != ctx.nx() || nxy != ctx.ny()) {
+                  throw std::invalid_argument(
+                      "Profile image size does not match context"
+                  );
+              }
+              std::vector<Real> chi2(batch_size);
+              Real duv = static_cast<Real>(1.0)
+                  / (static_cast<Real>(dxy) * static_cast<Real>(nxy));
+              galario::chi2_profile_from_context_batch(
+                  ctx.ctx,
+                  static_cast<int>(intensity_batch.shape(1)),
+                  intensity_batch.data(),
+                  static_cast<int>(batch_size),
+                  Rmin, dR, nxy, dxy,
+                  inc_batch.data(),
+                  dRA_batch.data(),
+                  dDec_batch.data(),
+                  duv,
+                  PA_batch.data(),
+                  chi2.data()
+              );
+              return vector_to_list(chi2);
+          },
+          "ctx"_a, "intensity_batch"_a,
+          "Rmin"_a, "dR"_a, "nxy"_a, "dxy"_a,
+          "inc_batch"_a, "dRA_batch"_a,
+          "dDec_batch"_a, "PA_batch"_a);
 #endif
 
     m.def("chi2Image",

@@ -55,8 +55,11 @@ master_doc = 'index'
 
 # General information about the project.
 project = u'galario'
-authors = u'Marco Tazzari, Frederik Beaujean, Leonardo Testi'
-copyright = '2017-%d, %s' % (datetime.now().year, authors)
+authors = u'Marco Tazzari, Frederik Beaujean, Leonardo Testi; maintained by wjz070707'
+copyright = (
+    '2017-2020, Marco Tazzari, Frederik Beaujean, Leonardo Testi and '
+    'contributors; 2026, wjz070707'
+)
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the
@@ -72,7 +75,7 @@ release = str(galario.__version__)
 #
 # This is also used if you do content translation via gettext catalogs.
 # Usually you set "language" from the command line for these cases.
-language = None
+language = 'en'
 
 # There are two options for replacing |today|: either, you set today to some
 # non-false value, then it is used:
@@ -129,7 +132,7 @@ html_theme = "sphinx_py3doc_enhanced_theme"
 # further.  For a list of options available for each theme, see the
 # documentation.
 html_theme_options = {
-    'githuburl': 'https://github.com/mtazzari/galario/',
+    'githuburl': 'https://github.com/wjz070707/galario_for_python3.13',
     'bodyfont': '"Lucida Grande",Arial,sans-serif',
     'headfont': '"Lucida Grande",Arial,sans-serif',
     'codefont': 'monospace,sans-serif',
@@ -307,4 +310,4 @@ texinfo_documents = [
 
 # override CSS file
 def setup(app):
-    app.add_stylesheet('css/custom.css')
+    app.add_css_file('css/custom.css')

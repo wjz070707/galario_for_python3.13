@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Fit the documented uv table with GALARIO's profile API and emcee 3."""
+"""Fit the documented uv table with GALARIO's profile API and emcee 3.
+
+Performance-critical design: one Context is created before sampling and reused
+for every vectorized walker batch. Do not move Context creation into the
+likelihood function; that repeats observation transfers and setup work.
+"""
 
 from __future__ import annotations
 
@@ -55,25 +60,30 @@ LABELS = [
 
 
 def gaussian_profile(
-    log10_f0: float,
-    sigma_arcsec: float,
+    log10_f0,
+    sigma_arcsec,
     r_min: float,
     dr: float,
     radial_cells: int,
 ) -> np.ndarray:
     radius = r_min + dr * np.arange(radial_cells)
-    sigma = sigma_arcsec * arcsec
-    return 10.0**log10_f0 * np.exp(-0.5 * (radius / sigma) ** 2)
+    amplitude = np.atleast_1d(10.0**np.asarray(log10_f0))[:, None]
+    sigma = np.atleast_1d(np.asarray(sigma_arcsec) * arcsec)[:, None]
+    profiles = amplitude * np.exp(
+        -0.5 * (radius[None, :] / sigma) ** 2
+    )
+    return profiles[0] if np.ndim(log10_f0) == 0 else profiles
 
 
-def log_prior(parameters: np.ndarray) -> float:
-    if np.all(
+def log_prior(parameters: np.ndarray) -> np.ndarray:
+    parameters = np.atleast_2d(parameters)
+    inside = np.all(
         (parameters >= PARAMETER_RANGES[:, 0])
-        & (parameters <= PARAMETER_RANGES[:, 1])
-    ):
-        # Uniform in the sampled coordinates, including log10(f0).
-        return 0.0
-    return -np.inf
+        & (parameters <= PARAMETER_RANGES[:, 1]),
+        axis=1,
+    )
+    # Uniform in the sampled coordinates, including log10(f0).
+    return np.where(inside, 0.0, -np.inf)
 
 
 def make_log_probability(
@@ -85,28 +95,31 @@ def make_log_probability(
     nxy: int,
     dxy: float,
 ):
-    def log_probability(parameters: np.ndarray) -> float:
+    def log_probability(parameters: np.ndarray) -> np.ndarray:
+        parameters = np.atleast_2d(parameters)
         prior = log_prior(parameters)
-        if not np.isfinite(prior):
-            return -np.inf
-
-        log10_f0, sigma, inc, pa, dra, ddec = parameters
-        intensity = gaussian_profile(
-            log10_f0, sigma, r_min, dr, radial_cells
-        )
-        chi2 = backend.chi2_profile(
-            intensity,
-            r_min,
-            dr,
-            nxy,
-            dxy,
-            ctx=profile_context,
-            inc=inc * deg,
-            PA=pa * deg,
-            dRA=dra * arcsec,
-            dDec=ddec * arcsec,
-        )
-        return prior - 0.5 * chi2
+        result = np.full(len(parameters), -np.inf)
+        valid = np.isfinite(prior)
+        if np.any(valid):
+            selected = parameters[valid]
+            log10_f0, sigma, inc, pa, dra, ddec = selected.T
+            intensity_batch = gaussian_profile(
+                log10_f0, sigma, r_min, dr, radial_cells
+            )
+            chi2 = backend.chi2_profile(
+                intensity_batch,
+                r_min,
+                dr,
+                nxy,
+                dxy,
+                ctx=profile_context,
+                inc_batch=inc * deg,
+                PA_batch=pa * deg,
+                dRA_batch=dra * arcsec,
+                dDec_batch=ddec * arcsec,
+            )
+            result[valid] = prior[valid] - 0.5 * chi2
+        return result
 
     return log_probability
 
@@ -171,8 +184,9 @@ def main() -> None:
         f"and a {radial_extent / arcsec:.3f} arcsec radial grid"
     )
 
-    # The profile FFT path now reuses the image context's observations,
-    # transform plan, and work buffers across all likelihood evaluations.
+    # Always reuse a context when observations stay fixed. It uploads u/v,
+    # visibilities, and weights once and retains FFT plans and work buffers.
+    # Calling chi2_profile without ctx inside MCMC repeats those transfers.
     profile_context = backend.create_image_context(
         nxy,
         nxy,
@@ -187,6 +201,10 @@ def main() -> None:
         f"profile context backend: "
         f"requested={profile_context.requested_backend}, "
         f"resolved={profile_context.resolved_backend}"
+    )
+    print(
+        "reusing one context avoids repeated observation transfers "
+        "and FFT workspace setup"
     )
 
     # Cross-check the cached chi2_profile path against sample_profile followed
@@ -248,7 +266,10 @@ def main() -> None:
         (WALKERS, len(INITIAL_POSITION))
     )
     sampler = EnsembleSampler(
-        WALKERS, len(INITIAL_POSITION), log_probability
+        WALKERS,
+        len(INITIAL_POSITION),
+        log_probability,
+        vectorize=True,
     )
     sampler.run_mcmc(positions, STEPS, progress=SHOW_PROGRESS)
 

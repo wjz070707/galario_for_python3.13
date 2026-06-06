@@ -52,6 +52,11 @@ none of those directories is part of the installed ``galario`` package.
 Contexts and repeated evaluation
 --------------------------------
 
+Context reuse is the defining performance optimization of the maintained 1.3
+line, not merely a convenience wrapper. Public examples and performance
+claims should use the Context path unless they explicitly measure one-shot
+sampling.
+
 ``Chi2ImageContext`` is intended for optimizers and MCMC workloads where
 ``u``, ``v``, observations, and weights remain fixed while model parameters
 change. A context owns reusable buffers and backend plans. Context objects are

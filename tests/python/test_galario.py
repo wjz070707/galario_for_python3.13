@@ -3,6 +3,7 @@
 # Gpu Accelerated Library for Analysing Radio Interferometer Observations     #
 #                                                                             #
 # Copyright (C) 2017-2020, Marco Tazzari, Frederik Beaujean, Leonardo Testi.  #
+# Copyright (C) 2026, wjz070707.                                             #
 #                                                                             #
 # This program is free software: you can redistribute it and/or modify        #
 # it under the terms of the Lesser GNU General Public License as published by #
@@ -14,7 +15,7 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                        #
 #                                                                             #
 # For more details see the LICENSE file.                                      #
-# For documentation see https://mtazzari.github.io/galario/                   #
+# Maintained at https://github.com/wjz070707/galario_for_python3.13           #
 ###############################################################################
 
 #!/usr/bin/env python
@@ -509,9 +510,11 @@ def test_image_origin(nsamples, real_type, rtol, acc_lib):
         nxy = 512
         dxy = full_fov / nxy
         sample_image_ref = py_sampleImage_direct
+        sample_image_backend = galario.BACKEND_DFT
     else:
         nxy, dxy = 4096, 6.42956326721e-08
         sample_image_ref = py_sampleImage
+        sample_image_backend = galario.BACKEND_AUTO
 
     # radial grid
     Rmin = 0.00001 * arcsec
@@ -545,7 +548,9 @@ def test_image_origin(nsamples, real_type, rtol, acc_lib):
     image_asym2[np.where(image_asym2 < 1e-10)] = 0.
 
     # Compute visibilities of ORIGINAL image with CURRENT GALARIO algorithm (only: origin='upper')
-    vis_C_upper_image_upper = acc_lib.sampleImage(image_asym, dxy, udat, vdat, dRA=0.5, dDec=-3., PA=10.)
+    vis_C_upper_image_upper = acc_lib.sampleImage(
+        image_asym, dxy, udat, vdat, dRA=0.5, dDec=-3., PA=10.,
+        backend=sample_image_backend)
 
     # Compute visibilities of ORIGINAL image with NEW algorithm, origin='upper'
     vis_py_upper_image_upper = sample_image_ref(image_asym, dxy, udat, vdat, dRA=0.5, dDec=-3., PA=10., origin='upper')
@@ -554,7 +559,9 @@ def test_image_origin(nsamples, real_type, rtol, acc_lib):
     vis_py_lower_image_lower = sample_image_ref(image_asym2, dxy, udat, vdat, dRA=0.5, dDec=-3., PA=10., origin='lower')
 
     # Compute with C implementation
-    vis_C_lower_image_lower = acc_lib.sampleImage(image_asym2, dxy, udat, vdat, dRA=0.5, dDec=-3., PA=10., origin='lower')
+    vis_C_lower_image_lower = acc_lib.sampleImage(
+        image_asym2, dxy, udat, vdat, dRA=0.5, dDec=-3., PA=10.,
+        origin='lower', backend=sample_image_backend)
 
     # check that they produce all the same visibilities
     assert_allclose(vis_py_upper_image_upper, vis_C_lower_image_lower, atol=0., rtol=rtol)
@@ -611,7 +618,9 @@ def test_all(nsamples, real_type, rtol, atol, acc_lib, pars):
         image_reference = create_reference_image(image_nxy, -5., 2., dtype=real_type)
 
         vis_py_sampleImage = py_sampleImage_direct(image_reference, dxy, image_udat, image_vdat, PA=PA, dRA=dRA, dDec=dDec)
-        vis_g_sampleImage = acc_lib.sampleImage(image_reference, dxy, image_udat, image_vdat, PA=PA, dRA=dRA, dDec=dDec)
+        vis_g_sampleImage = acc_lib.sampleImage(
+            image_reference, dxy, image_udat, image_vdat,
+            PA=PA, dRA=dRA, dDec=dDec, backend=galario.BACKEND_DFT)
     else:
         image_udat = udat
         image_vdat = vdat
@@ -640,7 +649,8 @@ def test_all(nsamples, real_type, rtol, atol, acc_lib, pars):
                                                dRA=dRA, dDec=dDec, PA=PA)
         chi2_g_chi2Image = acc_lib.chi2Image(image_reference, dxy, image_udat, image_vdat,
                                              x_image.real.copy(), x_image.imag.copy(), w_image,
-                                             dRA=dRA, dDec=dDec, PA=PA)
+                                             dRA=dRA, dDec=dDec, PA=PA,
+                                             backend=galario.BACKEND_DFT)
     else:
         chi2_pychi2Image = py_chi2Image(reference_image, dxy, udat, vdat, x.real.copy(), x.imag.copy(), w, dRA=dRA, dDec=dDec)
         chi2_g_chi2Image = acc_lib.chi2Image(reference_image, dxy, udat, vdat, x.real.copy(), x.imag.copy(), w, dRA=dRA, dDec=dDec)
@@ -962,6 +972,59 @@ def test_chi2_profile_context_matches_uncached_fft():
     )
 
     assert_allclose(actual, expected, rtol=1e-12, atol=1e-12)
+
+
+@pytest.mark.parametrize("backend", IMAGE_BACKENDS, ids=["fft", "dft", "nufft"])
+def test_chi2_profile_context_batch_matches_scalar(backend):
+    case = _make_profile_backend_case()
+    ctx = g_double.create_image_context(
+        case['nxy'],
+        case['nxy'],
+        case['u'],
+        case['v'],
+        case['vis_obs_re'],
+        case['vis_obs_im'],
+        case['weights'],
+        backend=backend,
+    )
+    intensity_batch = np.vstack([
+        case['intensity'],
+        case['intensity'] * 1.03,
+    ])
+    inc_batch = np.array([case['inc'], case['inc'] * 0.97])
+    dRA_batch = np.array([case['dRA'], case['dRA'] * 0.8])
+    dDec_batch = np.array([case['dDec'], case['dDec'] * 1.2])
+    PA_batch = np.array([case['PA'], case['PA'] * 0.9])
+
+    scalar = np.array([
+        g_double.chi2_profile(
+            intensity_batch[idx],
+            case['Rmin'],
+            case['dR'],
+            case['nxy'],
+            case['dxy'],
+            ctx=ctx,
+            inc=inc_batch[idx],
+            dRA=dRA_batch[idx],
+            dDec=dDec_batch[idx],
+            PA=PA_batch[idx],
+        )
+        for idx in range(len(intensity_batch))
+    ])
+    batch = g_double.chi2_profile(
+        intensity_batch,
+        case['Rmin'],
+        case['dR'],
+        case['nxy'],
+        case['dxy'],
+        ctx=ctx,
+        inc_batch=inc_batch,
+        dRA_batch=dRA_batch,
+        dDec_batch=dDec_batch,
+        PA_batch=PA_batch,
+    )
+
+    assert_allclose(batch, scalar, rtol=1e-10, atol=1e-10)
 
 
 @pytest.mark.parametrize("backend", IMAGE_BACKENDS, ids=["fft", "dft", "nufft"])

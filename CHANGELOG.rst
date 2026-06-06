@@ -1,3 +1,27 @@
+Unreleased
+++++++++++
+
+- [performance] Make reusable Contexts the primary optimizer and MCMC path.
+  Fixed observations, transform plans, and CPU/CUDA workspaces remain cached
+  across likelihood evaluations.
+- [performance] Add batched Context evaluation for profile and component-image
+  models, vectorized emcee walkers, GPU-side profile rasterization, reusable
+  cuFFT batch plans, and bounded CUDA workspace chunking.
+- [backend] Support explicit or automatic FFT, direct DFT, and oversampled
+  NUFFT-style execution.
+- [core] Simplify the numerical core to double precision and split public API,
+  shared, CPU, and CUDA implementation files.
+- [packaging] Replace legacy Python bindings and build helpers with nanobind,
+  scikit-build-core, local FFTW discovery, Python 3.10-3.13, and NumPy 2
+  support. GreatCMakeCookOff is no longer required.
+- [examples] Use all uv data, 24 walkers, 1000 steps, vectorized likelihoods,
+  reusable Contexts, and corner plots in the maintained emcee examples.
+- [docs] Promote Context reuse as the central 1.3 performance rule and document
+  immutable releases for reproducible scientific publication.
+- [maintenance] The 1.3 line is maintained by
+  `wjz070707 <https://github.com/wjz070707>`_.
+
+
 1.3.0 (2026-04-09)
 ++++++++++++++++++
 

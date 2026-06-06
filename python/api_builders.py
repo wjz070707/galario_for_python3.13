@@ -58,8 +58,31 @@ def build_api(raw_module, module_name: str, real_dtype, complex_dtype):
                      vis_obs_re=None, vis_obs_im=None, weights=None,
                      vis_obs_w=None, dRA=0.0, dDec=0.0, PA=0.0, inc=0.0,
                      backend=raw_module.BACKEND_AUTO, nufft_oversample=2.0,
-                     ctx=None):
+                     ctx=None, intensity_batch=None, inc_batch=None,
+                     dRA_batch=None, dDec_batch=None, PA_batch=None):
         if ctx is not None:
+            if intensity_batch is None and np.ndim(intensity) == 2:
+                intensity_batch = intensity
+            if intensity_batch is not None:
+                profiles = np.ascontiguousarray(
+                    intensity_batch, dtype=real_dtype
+                )
+                if profiles.ndim != 2:
+                    raise ValueError(
+                        "intensity_batch must have shape (batch, nr)"
+                    )
+                batch_size = profiles.shape[0]
+                inc_arr = np.zeros(batch_size, dtype=real_dtype) if inc_batch is None else np.ascontiguousarray(inc_batch, dtype=real_dtype)
+                dra_arr = np.zeros(batch_size, dtype=real_dtype) if dRA_batch is None else np.ascontiguousarray(dRA_batch, dtype=real_dtype)
+                ddec_arr = np.zeros(batch_size, dtype=real_dtype) if dDec_batch is None else np.ascontiguousarray(dDec_batch, dtype=real_dtype)
+                pa_arr = np.zeros(batch_size, dtype=real_dtype) if PA_batch is None else np.ascontiguousarray(PA_batch, dtype=real_dtype)
+                return np.asarray(
+                    raw_module._chi2_profile_from_context_batch(
+                        ctx, profiles, Rmin, dR, int(nxy), dxy,
+                        inc_arr, dra_arr, ddec_arr, pa_arr,
+                    ),
+                    dtype=real_dtype,
+                )
             return raw_module._chi2_profile_from_context(
                 ctx,
                 np.ascontiguousarray(intensity, dtype=real_dtype),

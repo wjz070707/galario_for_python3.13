@@ -1,5 +1,8 @@
 .. :authors:
 
+Current maintainer:
+    - `wjz070707 <https://github.com/wjz070707>`_ (GALARIO 1.3 modernization, Python 3.13, reusable Contexts, and batched CPU/CUDA paths)
+
 Authors:
     - `Marco Tazzari (University of Cambridge) <https://github.com/mtazzari>`_
     - `Frederik Beaujean <https://github.com/fredRos>`_

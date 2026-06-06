@@ -18,6 +18,9 @@ authors = [
   { name = "Frederik Beaujean" },
   { name = "Leonardo Testi" },
 ]
+maintainers = [
+  { name = "wjz070707", email = "3095910755@qq.com" },
+]
 keywords = [
   "astronomy",
   "interferometry",
@@ -51,6 +54,8 @@ test = [
 ]
 docs = [
   "sphinx>=7",
+  "sphinx-py3doc-enhanced-theme>=2.4",
+  "sphinxcontrib-fulltoc>=1.2",
 ]
 demo = [
   "corner>=2.2",
@@ -59,11 +64,11 @@ demo = [
 ]
 
 [project.urls]
-Homepage = "https://mtazzari.github.io/galario/"
-Documentation = "https://mtazzari.github.io/galario/"
-Repository = "https://github.com/mtazzari/galario"
-Issues = "https://github.com/mtazzari/galario/issues"
-Changelog = "https://github.com/mtazzari/galario/blob/master/CHANGELOG.rst"
+Homepage = "https://github.com/wjz070707/galario_for_python3.13"
+Documentation = "https://github.com/wjz070707/galario_for_python3.13/tree/main/docs"
+Repository = "https://github.com/wjz070707/galario_for_python3.13"
+Issues = "https://github.com/wjz070707/galario_for_python3.13/issues"
+Changelog = "https://github.com/wjz070707/galario_for_python3.13/blob/main/CHANGELOG.rst"
 
 [tool.scikit-build]
 build-dir = ".pyproject-build/{wheel_tag}"
@@ -71,6 +76,7 @@ cmake.build-type = "Release"
 sdist.include = [
   "AUTHORS.rst",
   "CHANGELOG.rst",
+  "CITATION.cff",
   "CMakeLists.txt",
   "LICENSE",
   "README.md",

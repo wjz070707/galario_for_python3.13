@@ -16,7 +16,7 @@ implementation in the `emcee <http://dfm.io/emcee/current/>`_ Python package.
     This page preserves the detailed scientific walk-through. The maintained,
     executable emcee 3 implementation is documented in
     :doc:`emcee_tutorial` and lives in
-    ``examples/emcee_gaussian_profile.py``.
+    ``examples/chi2_profile_gaussian.py``.
 
 In this page we will show how to fit the mock observations of a protoplanetary disk. In particular, in the example we will
 analyse mock visibilities of the disk continuum emission at :math:`\lambda=` 1 mm whose synthetized map is shown in this figure:
@@ -213,7 +213,7 @@ Fit a single-wavelength data set
         sampler.run_mcmc(pos, nsteps, progress=True)
 
     The maintained executable version lives in
-    ``examples/emcee_gaussian_profile.py``. Edit its configuration block and
+    ``examples/chi2_profile_gaussian.py``. Edit its configuration block and
     run it directly; runtime depends on the selected points, walkers, steps,
     radial cells, and CPU thread count.
 

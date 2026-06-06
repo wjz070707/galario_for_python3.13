@@ -1,6 +1,12 @@
 Basic usage
 ===========
 
+.. important::
+
+    For repeated fitting, start with a Context. It is not an optional
+    micro-optimization: it is the main 1.3 execution path for avoiding repeated
+    observation transfers, allocations, and transform-plan construction.
+
 GALARIO accepts double-precision NumPy arrays. The ``u`` and ``v`` coordinates
 must be expressed in observing wavelengths, image pixel size ``dxy`` in
 radians, and visibilities in Jy.
@@ -93,8 +99,31 @@ For optimizers and MCMC, create a context once when observations remain fixed:
 
     chi2 = galario.chi2_image(ctx=ctx, image=image, dxy=dxy)
 
-The context reuses observation arrays, work buffers, and transform plans. It is
-a mutable workspace and must not be shared by simultaneous calls.
+Always reuse a context inside an optimizer or MCMC loop while the observations
+remain fixed. Without it, repeated calls may upload ``u``, ``v``, observed
+visibilities, and weights again and recreate backend workspaces. The context
+retains those arrays, work buffers, and transform plans.
+
+Profile likelihoods use the same context:
+
+.. code-block:: python
+
+    chi2 = galario.chi2_profile(
+        intensity,
+        Rmin,
+        dR,
+        nxy,
+        dxy,
+        ctx=ctx,
+        inc=inc,
+        PA=PA,
+    )
+
+For ensemble samplers, pass a two-dimensional ``intensity`` array with shape
+``(batch, nr)`` and the corresponding ``inc_batch``, ``PA_batch``,
+``dRA_batch``, and ``dDec_batch`` arrays. CUDA then rasterizes and transforms
+the whole walker batch on the GPU. A context is a mutable workspace and must
+not be shared by simultaneous calls.
 
 Backend selection
 -----------------
