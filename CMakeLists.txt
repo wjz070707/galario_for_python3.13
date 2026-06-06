@@ -20,9 +20,6 @@
 cmake_minimum_required(VERSION 3.15)
 project(galario VERSION 1.3.0)
 
-# Keep third-party CMake helper noise under control on modern CMake versions.
-set(CMAKE_SUPPRESS_DEVELOPER_WARNINGS 1 CACHE INTERNAL "Suppress developer warnings from bundled CMake modules" FORCE)
-set(CMAKE_WARN_DEPRECATED FALSE CACHE BOOL "Suppress deprecated CMake warnings from bundled modules" FORCE)
 set(PACKAGE_VERSION "'${PROJECT_VERSION}'")
 
 if(NOT CMAKE_BUILD_TYPE)
@@ -41,10 +38,6 @@ endif()
 # ship extra findXXX.cmake in `cmake/`
 # APPEND doesn't propagate variable to subdirectory
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
-
-# many more useful cmake module and scripts
-# are downloaded into the build directory
-include(LookUp-GreatCMakeCookOff)
 
 ###
 # the optional packages

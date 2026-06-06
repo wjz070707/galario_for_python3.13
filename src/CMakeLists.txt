@@ -83,8 +83,9 @@ if(OpenMP_FOUND AND Threads_FOUND)
   endif()
 endif()
 
-# GALARIO is double precision only.
-find_package(FFTW3 COMPONENTS DOUBLE ${FFTW_PARALLEL})
+# GALARIO is double precision only. The local finder exposes just the serial
+# and optional pthread FFTW libraries used by the CPU backend.
+find_package(FFTW3 REQUIRED COMPONENTS DOUBLE ${FFTW_PARALLEL})
 
 OPTION(GALARIO_TIMING "Output timing of selected functions. For testing only. Default: OFF" OFF)
 

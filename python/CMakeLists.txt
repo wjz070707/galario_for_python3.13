@@ -74,7 +74,7 @@ if (CUDA_FOUND)
 endif()
 
 set(NANOBIND_FOUND FALSE)
-set(_nanobind_python "${PYTHON_EXECUTABLE}")
+set(_nanobind_python "${Python_EXECUTABLE}")
 if(DEFINED ENV{CONDA_PREFIX} AND EXISTS "$ENV{CONDA_PREFIX}/bin/python")
   set(_nanobind_python "$ENV{CONDA_PREFIX}/bin/python")
   set(Python_EXECUTABLE "${_nanobind_python}" CACHE FILEPATH "Python executable for nanobind bindings" FORCE)
@@ -128,19 +128,15 @@ endif()
 if(DEFINED SKBUILD_PROJECT_NAME)
   set(GALARIO_PYTHON_PKG_DIR "." CACHE PATH "Python install path for wheel builds" FORCE)
 else()
-  # to set ${PYTHON_PKG_DIR}. It is prepended by ${CMAKE_INSTALL_PREFIX} if set
-  include(PythonInstall)
-
-  # Python 3.12+ removed distutils, so keep a sysconfig fallback even if the
-  # helper script fails to populate PYTHON_PKG_DIR.
-  if(NOT PYTHON_PKG_DIR)
-    execute_process(
-      COMMAND ${PYTHON_EXECUTABLE} -c "import sysconfig; print(sysconfig.get_paths()['purelib'])"
-      OUTPUT_VARIABLE PYTHON_PKG_DIR
-      OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-  endif()
-  if(NOT PYTHON_PKG_DIR)
+  # Ask the selected interpreter directly; this works with Python 3.10+ and
+  # avoids coupling installation to legacy distutils-based CMake helpers.
+  execute_process(
+    COMMAND "${Python_EXECUTABLE}" -c "import sysconfig; print(sysconfig.get_paths()['purelib'])"
+    RESULT_VARIABLE _python_pkg_dir_status
+    OUTPUT_VARIABLE PYTHON_PKG_DIR
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+  if(NOT _python_pkg_dir_status EQUAL 0 OR NOT PYTHON_PKG_DIR)
     message(FATAL_ERROR "Unable to determine PYTHON_PKG_DIR for installation")
   endif()
 
@@ -213,16 +209,18 @@ configure_file(
   "${CMAKE_CURRENT_BINARY_DIR}/${galario_nanobind_test}"
   COPYONLY
   )
-add_test(NAME CanImport COMMAND ${PYTHON_EXECUTABLE} -c "import ${PROJECT_NAME}")
-
-# https://github.com/UCL/GreatCMakeCookOff/wiki/Adding-py.test-to-ctest
-include(AddPyTest)
-
-# I don't understand the first arg but it seems to work if py.test already installed
-setup_pytest("${CMAKE_CURRENT_BINARY_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/py.test.sh")
-
-# the source name has to match test_*.py
-# https://github.com/UCL/GreatCMakeCookOff/issues/56
-#
-# need to run in binary_dir so import of pygalario works
-add_pytest("${CMAKE_CURRENT_BINARY_DIR}/${galario_test}" NOINSTALL CMDLINE --cov=./)
+add_test(
+  NAME python_import
+  COMMAND "${Python_EXECUTABLE}" -c "import ${PROJECT_NAME}"
+)
+add_test(
+  NAME python_tests
+  COMMAND "${Python_EXECUTABLE}" -m pytest -q
+          "${CMAKE_CURRENT_BINARY_DIR}/${galario_test}"
+          "${CMAKE_CURRENT_BINARY_DIR}/${galario_nanobind_test}"
+)
+set_tests_properties(python_import python_tests PROPERTIES
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  ENVIRONMENT "PYTHONPATH=${CMAKE_CURRENT_BINARY_DIR}"
+  LABELS "python"
+)

@@ -78,7 +78,6 @@ sdist.include = [
   "benchmarks",
   "docs",
   "examples",
-  "GreatCMakeCookOff",
   "python",
   "src",
   "tests",
