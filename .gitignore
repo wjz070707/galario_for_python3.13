@@ -1,7 +1,21 @@
 build/
+build_gpu/
+dist/
+.pyproject-build/
+.pytest_cache/
+.vscode/
+*.egg-info/
 *.o
 *.so
 *.a
 *.pyc
 __pycache__/
 .desktop.ini
+
+# Local science workspace. These directories contain large Measurement Sets,
+# exported visibilities, MCMC chains, and machine-specific analysis outputs.
+data/
+galario_fit/
+triangle_example.png
+triangle_image_example.png
+INSTALL_GALARIOCODEX.md

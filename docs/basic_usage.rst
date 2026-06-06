@@ -1,67 +1,104 @@
+Basic usage
 ===========
-Basic Usage
-===========
 
-.. |u_j| replace:: :math:`u_j`
-.. |v_j| replace:: :math:`v_j`
-.. |w_j| replace:: :math:`w_j`
+GALARIO accepts double-precision NumPy arrays. The ``u`` and ``v`` coordinates
+must be expressed in observing wavelengths, image pixel size ``dxy`` in
+radians, and visibilities in Jy.
 
-Let's say you have an observational dataset of `M` visibility points located at :math:`(u_j, v_j)`, with :math:`j=1...M` and |u_j|, |v_j| expressed in units of the observing wavelength. :math:`V_{obs\ j}` (Jy) is the :math:`j`-th complex visibility with associated theoretical weight |w_j|.
-With |galario| you can:
+Portable top-level API
+----------------------
 
-**1) Compute visibilities from a model image**
+The top-level package selects the CUDA implementation when it was built with
+CUDA and otherwise selects CPU:
 
-    If you want to compute the visibilities of a model :code:`image` (Jy/px) with pixel size `dxy` (rad) in the same :math:`(u_j, v_j)` locations of the observations, you can easily do it with the GPU accelerated |galario|:
+.. code-block:: python
 
-    .. code-block:: python
+    import galario
 
-        from galario.double_cuda import sampleImage
+    vis = galario.sample_image(
+        image=image,
+        dxy=dxy,
+        u=u,
+        v=v,
+        backend=galario.BACKEND_AUTO,
+    )
 
-        vis = sampleImage(image, dxy, u, v)
+Explicit backend module
+-----------------------
 
-    where `vis` is a complex array of length :math:`N` containing the real (`vis.real`) and imaginary (`vis.imag`) part of the synthetic visibilities.
+Use the compatibility modules when code must explicitly select hardware:
 
-**2) Compute visibilities from an axisymmetric brightness profile**
+.. code-block:: python
 
-    If you want to compare the observations with a model characterized by an **axisymmetric brightness profile**, |galario| offers dedicated functions that exploit the symmetry of the model to accelerate the image creation.
+    from galario import double as cpu
 
-    If :math:`I(R)` (Jy/sr) is the radial brightness profile, the command is as simple as:
+    cpu.threads(4)
+    vis_cpu = cpu.sampleImage(image, dxy, u, v)
 
-    .. code-block:: python
+    if galario.HAVE_CUDA:
+        from galario import double_cuda as cuda
+        cuda.use_gpu(0)
+        vis_gpu = cuda.sampleImage(image, dxy, u, v)
 
-        from galario.double_cuda import sampleProfile
+Image and profile sampling
+--------------------------
 
-        vis = sampleProfile(I, Rmin, dR, nxy, dxy, u, v)
+Use ``sample_image`` for a two-dimensional model image:
 
-    where `Rmin` and `dR` are expressed in radians and are the innermost radius and the cell size of the grid on which :math:`I(R)` is computed. An analogous function
-    `chi2Profile` allows one to compute directly the chi square.
+.. code-block:: python
 
-**3) Compute the** :math:`\chi^2` **of a model (image or brightness profile)**
+    vis = galario.sample_image(
+        image=image,
+        dxy=dxy,
+        u=u,
+        v=v,
+        dRA=dRA,
+        dDec=dDec,
+        PA=PA,
+    )
 
-    If you are doing a **fit** and the only number you are interested in is the :math:`\chi^2` for the likelihood computation, you can use directly one of these:
+Use ``sample_profile`` for an axisymmetric radial brightness profile:
 
-    .. code-block:: python
+.. code-block:: python
 
-        from galario.double_cuda import chi2Image
+    vis = galario.sample_profile(
+        intensity,
+        Rmin,
+        dR,
+        nxy,
+        dxy,
+        u,
+        v,
+        inc=inc,
+        PA=PA,
+    )
 
-        chi2 = chi2Image(image, dxy, u, v, V_obs.real, V_obs.imag, w)
-        chi2 = chi2Profile(I, Rmin, dR, nxy, dxy, u, v, V_obs.real, V_obs.imag, w)
+Repeated chi-squared evaluation
+-------------------------------
 
+For optimizers and MCMC, create a context once when observations remain fixed:
 
-**4) Do all the above operations + translate and rotate the model image**
+.. code-block:: python
 
-    To translate the model image in Right Ascension and Declination direction by (dRA, dDec) offsets (rad),
-    or to rotate the image by a Position Angle PA (rad) (defined East of North), you can specify them as optional parameters.
+    ctx = galario.create_image_context(
+        image.shape[0],
+        image.shape[1],
+        u,
+        v,
+        vis_obs.real,
+        vis_obs.imag,
+        weights,
+        backend=galario.BACKEND_AUTO,
+    )
 
-    This works for all the `sampleImage`, `sampleProfile`, `chi2Image` and `chi2Profile` functions:
+    chi2 = galario.chi2_image(ctx=ctx, image=image, dxy=dxy)
 
-    .. code-block:: python
+The context reuses observation arrays, work buffers, and transform plans. It is
+a mutable workspace and must not be shared by simultaneous calls.
 
-        from galario.double_cuda import sampleImage
+Backend selection
+-----------------
 
-        vis = sampleImage(image, dxy, u, v, dRA=dRA, dDec=dDec, PA=PA)
-
-.. note::
-    If you work on a machine **without** a CUDA-enabled GPU, don't worry: you can use the CPU version
-    of |galario| by just removing the subscript `"_cuda"` from the imports above and benefit from the openMP parallelization.
-    All the function names and interfaces are the same for GPU and CPU version!
+The available values are ``BACKEND_AUTO``, ``BACKEND_FFT``, ``BACKEND_DFT``,
+and ``BACKEND_NUFFT``. Start with ``AUTO``. Explicit selection is useful for
+validation and benchmarking.

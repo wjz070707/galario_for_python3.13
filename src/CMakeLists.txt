@@ -34,25 +34,36 @@ else()
   message(FATAL_ERROR "Your compiler is not supported for lack of complete C++11 support")
 endif()
 
-# these options are understood by both gcc and nvcc. The latter takes into account ${CMAKE_CXX_FLAGS}
-set(cxx_std "-std=c++11")
-set(CMAKE_CXX_FLAGS "${cxx_std} ${CMAKE_CXX_FLAGS}")
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-# these need to be wrapped in -Xcompiler for nvcc
-# use strict-aliasing because all input arrays to functions must not alias for correctness
-set(extra_compile_options  -Wall -pedantic -fstrict-aliasing -pthread)
-add_compile_options(${extra_compile_options})
+# Keep host compiler warnings/aliasing flags on the C++ compilation path only.
+add_compile_options(
+  $<$<COMPILE_LANGUAGE:CXX>:-Wall>
+  $<$<COMPILE_LANGUAGE:CXX>:-pedantic>
+  $<$<COMPILE_LANGUAGE:CXX>:-fstrict-aliasing>
+  $<$<COMPILE_LANGUAGE:CXX>:-pthread>
+)
 
-# we compile the same source file multiple times, varying preprocessor definitions
-set(common_cpp "${CMAKE_CURRENT_SOURCE_DIR}/galario.cpp")
+# explicit CPU and CUDA translation units keep the build layout honest and
+# avoid the old "copy .cpp to .cu" workaround.
+set(common_sources
+  "${CMAKE_CURRENT_SOURCE_DIR}/galario_common.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/galario_api.cpp"
+)
+set(cpu_sources
+  ${common_sources}
+  "${CMAKE_CURRENT_SOURCE_DIR}/galario_cpu.cpp"
+)
+set(cuda_sources
+  ${common_sources}
+  "${CMAKE_CURRENT_SOURCE_DIR}/galario_gpu.cu"
+)
 
-# compile single and double precision in separate libraries
-add_library(galario_single ${common_cpp})
+add_library(galario ${cpu_sources})
 
-add_library(galario ${common_cpp})
-target_compile_definitions(galario PUBLIC DOUBLE_PRECISION)
-
-set(install_libs galario_single galario)
+set(install_libs galario)
 
 find_package(OpenMP)
 find_package(Threads)
@@ -65,20 +76,19 @@ if(OpenMP_FOUND AND Threads_FOUND)
   if(APPLE)
     find_library(OMP_LIB omp HINTS "$ENV{CONDA_PREFIX}/lib" "${CMAKE_PREFIX_PATH}/lib")
     if(OMP_LIB)
-      target_link_libraries(galario_single ${OMP_LIB})
-      target_link_libraries(galario        ${OMP_LIB})
+      target_link_libraries(galario ${OMP_LIB})
     else()
       message(FATAL_ERROR "OpenMP found but libomp (omp) not found. Install llvm-openmp in conda.")
     endif()
   endif()
 endif()
 
-# we need fftw with (single+double)x(serial+openmp)
-find_package(FFTW3 COMPONENTS SINGLE DOUBLE ${FFTW_PARALLEL})
+# GALARIO is double precision only.
+find_package(FFTW3 COMPONENTS DOUBLE ${FFTW_PARALLEL})
 
 OPTION(GALARIO_TIMING "Output timing of selected functions. For testing only. Default: OFF" OFF)
 
-foreach(t IN ITEMS galario_single galario)
+foreach(t IN ITEMS galario)
   target_link_libraries(${t} ${FFTW3_LIBRARIES})
   target_include_directories(${t} PUBLIC ${FFTW3_INCLUDE_DIRS} ${FFTW3_INCLUDE_DIR_PARALLEL})
   if(GALARIO_TIMING)
@@ -87,45 +97,26 @@ foreach(t IN ITEMS galario_single galario)
 endforeach()
 
 if (CUDA_FOUND)
-  # We require at least 30 because anything before is deprecated in cuda 8. For
-  # maximum compatibility with future GPUs, we don't specify an exact GPU code
-  # like such as sm_53. The code is JIT compiled incurring a startup delay.
-  # http://docs.nvidia.com/cuda/cuda-compiler-driver-nvcc/index.html#further-mechanisms
-  list(APPEND CUDA_NVCC_FLAGS --gpu-architecture=compute_80 --gpu-code=sm_80)
+  add_library(galario_cuda ${cuda_sources})
 
-  # Issue with cuda 7.5 on Ubuntu 16.04
-  # https://github.com/BVLC/caffe/issues/4046
-  list(APPEND CUDA_NVCC_FLAGS -D_FORCE_INLINES)
-
-  # Allow multiple processes to use the GPU concurrently
-  # https://github.com/mtazzari/galario/issues/60
-  list(APPEND CUDA_NVCC_FLAGS --default-stream per-thread)
-
-  if(GALARIO_TIMING)
-    list(APPEND CUDA_NVCC_FLAGS -DGALARIO_TIMING)
-  endif()
-
-  SET(CUDA_PROPAGATE_HOST_FLAGS ON)
-
-  # Specify include directories
-  include_directories("${CMAKE_CURRENT_SOURCE_DIR}")
-
-  # copy over common file and rename to .cu, else cmake doesn't call nvcc on it
-  set(common_cu "${CMAKE_CURRENT_BINARY_DIR}/cuda_lib.cu")
-  configure_file(${common_cpp} ${common_cu})
-
-  # first compile float version
-  cuda_add_library(galario_single_cuda ${common_cu})
-
-  # add_definitions(-DDOUBLE_PRECISION) only add now because undefined
-  # means single precision, else we'd have to remove the -D... from
-  # NVCC_FLAGS and that would be more work
-  list(APPEND CUDA_NVCC_FLAGS -DDOUBLE_PRECISION)
-  cuda_add_library(galario_cuda ${common_cu})
-
-  foreach(t IN ITEMS galario_single_cuda galario_cuda)
-    cuda_add_cublas_to_target(${t})
-    cuda_add_cufft_to_target(${t})
+  foreach(t IN ITEMS galario_cuda)
+    target_include_directories(${t} PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_link_libraries(${t} PUBLIC CUDA::cudart CUDA::cublas CUDA::cufft)
+    target_compile_options(${t} PRIVATE
+      $<$<COMPILE_LANGUAGE:CUDA>:--default-stream=per-thread>
+    )
+    target_compile_definitions(${t} PRIVATE
+      $<$<COMPILE_LANGUAGE:CUDA>:_FORCE_INLINES>
+    )
+    if(GALARIO_TIMING)
+      target_compile_definitions(${t} PRIVATE GALARIO_TIMING=1)
+    endif()
+    set_target_properties(${t} PROPERTIES
+      CUDA_ARCHITECTURES 80
+      CUDA_STANDARD 11
+      CUDA_STANDARD_REQUIRED ON
+      POSITION_INDEPENDENT_CODE ON
+    )
     list(APPEND install_libs ${t})
   endforeach()
 endif() # cuda

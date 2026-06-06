@@ -17,8 +17,17 @@
 # For documentation see https://mtazzari.github.io/galario/                   #
 ###############################################################################
 
-import pytest
+#! /bin/bash
 
-def pytest_addoption(parser):
-    parser.addoption("--gpu", action="store", default=0,
-        help="Run tests on gpu. Default: 0")
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+benchmark="${script_dir}/quickstart_benchmark.py"
+python_executable="${PYTHON:-python3}"
+
+"${python_executable}" "${benchmark}" "$@"
+
+if [ "${GALARIO_BENCHMARK_GPU:-0}" = "1" ] &&
+   "${python_executable}" -c "import galario; raise SystemExit(0 if galario.HAVE_CUDA else 1)"; then
+    "${python_executable}" "${benchmark}" --gpu "$@"
+fi

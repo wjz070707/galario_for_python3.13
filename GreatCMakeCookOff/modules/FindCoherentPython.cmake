@@ -47,9 +47,9 @@ if(NOT CMAKE_CROSS_COMPILING)
             endif()
         endif()
     endmacro()
-    # Figures out paths from distutils' sysconfig module and sys.prefix
+    # Figures out paths from sysconfig and sys.prefix.
     # Started off for canopy and virtualenv
-    macro(paths_from_distutils_sysconfig)
+    macro(paths_from_python_sysconfig)
         call_python(PYTHON_INTERP_PREFIX "import sys; print(sys.prefix)")
         if(DEFINED PYTHON_INTERP_PREFIX)
             FILE(TO_CMAKE_PATH ${PYTHON_INTERP_PREFIX} PYTHON_INTERP_PREFIX)
@@ -61,18 +61,18 @@ if(NOT CMAKE_CROSS_COMPILING)
             endif()
         endif()
         call_python(python_include
-        "from distutils.sysconfig import get_python_inc"
-            "print(get_python_inc())"
+        "import sysconfig"
+            "print(sysconfig.get_path('include'))"
         )
         if(DEFINED python_include AND EXISTS "${python_include}")
             FILE(TO_CMAKE_PATH ${python_include} python_include)
             set(PYTHON_INCLUDE_DIR "${python_include}")
         endif()
-        # And tries adding sysconfig.get_python_lib output
+        # And tries adding sysconfig.get_paths()['purelib'] output.
         # Good for canopy, but not virtualenv.
         call_python(python_lib
-        "from distutils.sysconfig import get_python_lib"
-            "print(get_python_lib())"
+        "import sysconfig"
+            "print(sysconfig.get_paths()['purelib'])"
         )
         if(DEFINED python_lib)
             FILE(TO_CMAKE_PATH ${python_lib} python_lib)
@@ -87,8 +87,8 @@ if(NOT CMAKE_CROSS_COMPILING)
         # And tries get_config_var('LIBDIR').
         # Good for virtualenv but not canopy.
         call_python(python_lib
-        "from distutils.sysconfig import get_config_var"
-        "print(get_config_var('LIBDIR'))"
+        "import sysconfig"
+        "print(sysconfig.get_config_var('LIBDIR'))"
         )
         if(DEFINED python_lib AND EXISTS "${python_lib}")
             list(INSERT CMAKE_LIBRARY_PATH 0 "${python_lib}")
@@ -96,7 +96,7 @@ if(NOT CMAKE_CROSS_COMPILING)
     endmacro()
 
     add_to_framework_paths()
-    paths_from_distutils_sysconfig()
+    paths_from_python_sysconfig()
 endif()
 
 set(version_string "${PYTHON_VERSION_MAJOR}")

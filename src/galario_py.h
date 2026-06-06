@@ -22,21 +22,54 @@
 #include "galario_defs.h"
 
 namespace galario {
-/* functions for python interface. Need void* to be independent of C
- * type (host vs device) which can't be parsed by cython.
+/* functions for python interface. Need void* to stay independent of C
+ * type (host vs device) while keeping the bindings layer simple.
  */
 
 /* Main user functions */
 void _sample_profile(int nr, void *intensity, dreal Rmin, dreal dR, dreal dxy, int nxy, dreal inc, dreal dRA, dreal dDec,
-                     dreal duv, dreal PA, int nd, void *u, void *v, void *vis_int);
-void _sample_image(int nx, int ny, void* data, dreal v_origin, dreal dRA, dreal dDec, dreal duv, dreal PA, int nd, void* u, void* v, void* vis_int);
+                     dreal duv, dreal PA, int nd, void *u, void *v, void *vis_int, int backend, dreal nufft_oversample);
+void _sample_image(int nx, int ny, void* data, dreal v_origin, dreal dRA, dreal dDec, dreal duv, dreal PA, int nd, void* u, void* v, void* vis_int, int backend, dreal nufft_oversample);
 dreal _chi2_profile(int nr, void *intensity, dreal Rmin, dreal dR, dreal dxy, int nxy, dreal inc, dreal dRA, dreal dDec,
-                    dreal duv, dreal PA, int nd, void *u, void *v, void *vis_obs_re, void *vis_obs_im, void *weights);
-dreal _chi2_image(int nx, int ny, void* data, dreal v_origin, dreal dRA, dreal dDec, dreal duv, dreal PA, int nd, void* u, void* v, void* vis_obs_re, void* vis_obs_im, void* weights);
-void* _create_chi2_image_context(int nx, int ny, int nd, void* u, void* v,
-                                void* vis_obs_re, void* vis_obs_im, void* weights);
-void _destroy_chi2_image_context(void* context);
-dreal _chi2_image_cached(void* context, void* data, dreal v_origin, dreal dRA, dreal dDec,
+                    dreal duv, dreal PA, int nd, void *u, void *v, void *vis_obs_re, void *vis_obs_im, void *weights, int backend, dreal nufft_oversample);
+dreal _chi2_image(int nx, int ny, void* data, dreal v_origin, dreal dRA, dreal dDec, dreal duv, dreal PA, int nd, void* u, void* v, void* vis_obs_re, void* vis_obs_im, void* weights, int backend, dreal nufft_oversample);
+void* _create_image_context(int nx, int ny, int nd, void* u, void* v,
+                                void* vis_obs_re, void* vis_obs_im, void* weights, int backend, dreal nufft_oversample);
+void _destroy_image_context(void* context);
+int _image_context_requested_backend(void* context);
+int _image_context_backend(void* context);
+int _image_context_batch_backend(void* context, int batch_size);
+void _sample_image_components(int nx, int ny, dreal dxy,
+                              int ngauss, void* gauss_params,
+                              int nrings, void* ring_params,
+                              int narcs, void* arc_params,
+                              dreal inc, dreal v_origin,
+                              dreal dRA, dreal dDec, dreal duv, dreal PA,
+                              int nd, void* u, void* v, void* vis_int,
+                              int backend, dreal nufft_oversample);
+dreal _chi2_image_components(int nx, int ny, dreal dxy,
+                             int ngauss, void* gauss_params,
+                             int nrings, void* ring_params,
+                             int narcs, void* arc_params,
+                             dreal inc, dreal v_origin,
+                             dreal dRA, dreal dDec, dreal duv, dreal PA,
+                             int nd, void* u, void* v, void* vis_obs_re, void* vis_obs_im, void* weights,
+                             int backend, dreal nufft_oversample);
+dreal _chi2_image_from_context_components(void* context, dreal dxy,
+                                    int ngauss, void* gauss_params,
+                                    int nrings, void* ring_params,
+                                    int narcs, void* arc_params,
+                                    dreal inc, dreal v_origin,
+                                    dreal dRA, dreal dDec, dreal duv, dreal PA);
+void _chi2_image_from_context_components_batch(void* context, dreal dxy,
+                                         int batch_size,
+                                         int ngauss, void* gauss_params_batch,
+                                         int nrings, void* ring_params_batch,
+                                         int narcs, void* arc_params_batch,
+                                         void* inc_batch, dreal v_origin,
+                                         void* dRA_batch, void* dDec_batch,
+                                         dreal duv, void* PA_batch, void* chi2_out);
+dreal _chi2_image_from_context(void* context, void* data, dreal v_origin, dreal dRA, dreal dDec,
                          dreal duv, dreal PA);
 void _sweep(int nr, void *intensity, dreal Rmin, dreal dR, int nxy, dreal dxy, dreal inc, void *image);
 void _uv_rotate(dreal PA, dreal dRA, dreal dDec, void* dRArot, void* dDecrot, int nd, void* u, void* v, void* urot, void* vrot);

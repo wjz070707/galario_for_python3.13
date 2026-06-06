@@ -25,22 +25,10 @@
     #include <complex>
 #endif
 
-#ifdef DOUBLE_PRECISION
+typedef double dreal;
 
-    typedef double dreal;
-
-    #ifdef __CUDACC__
-        typedef cufftDoubleComplex dcomplex;
-    #else
-        typedef std::complex<dreal> dcomplex;
-    #endif
+#ifdef __CUDACC__
+    typedef cufftDoubleComplex dcomplex;
 #else
-
-    typedef float dreal;
-
-    #ifdef __CUDACC__
-        typedef cufftComplex dcomplex;
-    #else
-        typedef std::complex<float> dcomplex;
-    #endif
+    typedef std::complex<dreal> dcomplex;
 #endif

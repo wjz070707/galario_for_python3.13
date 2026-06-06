@@ -50,16 +50,11 @@ relevant equations and the algorithm implementation.
 |galario| is actively developed on `GitHub <https://github.com/mtazzari/galario/>`_
 and has already been employed in :doc:`these publications <publications>`.
 
-.. note:: The Python and C++ bindings of |galario| can be installed easily via `conda <https://conda.io>`_:
+.. note::
 
-    .. code-block:: bash
-
-       conda install -c conda-forge galario
-
-    Due to technical limitations, the conda package does not support GPUs at the
-    moment. If you want to use a GPU, you have to build |galario| by hand.
-
-    All the details on how to build and install |galario| can be found in the :doc:`Setup <install>` page.
+    Version 1.3 uses a CMake, scikit-build-core, and nanobind source build.
+    Historical binary packages may expose an older API. Current CPU and CUDA
+    build instructions are in :doc:`Setup <install>`.
 
 
 Basic functionality of |galario|: see the :doc:`Basic Usage <basic_usage>` page.
@@ -122,7 +117,9 @@ Contents
     Setup <install>
     Basic Usage <basic_usage>
     Getting Started <quickstart>
+    emcee 3 Tutorial <emcee_tutorial>
     Tech specs <tech-specs>
+    Architecture <architecture>
     Cookbook <cookbook>
     Python API <py-api>
     C++ API <C++-api>

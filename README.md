@@ -1,53 +1,97 @@
-galario
-=======
+# GALARIO 1.3
 
-**Gpu Accelerated Library for Analysing Radio Interferometer Observations**
+GPU Accelerated Library for Analysing Radio Interferometer Observations.
 
-[![Build Status](https://github.com/mtazzari/galario/actions/workflows/unit-tests.yml/badge.svg)](https://github.com/mtazzari/galario/actions/workflows/unit-tests.yml)
-[![Conda (channel only)](https://img.shields.io/conda/vn/conda-forge/galario.svg)](https://anaconda.org/conda-forge/galario)
-[![Conda Downloads](https://img.shields.io/conda/dn/conda-forge/galario.svg)](https://anaconda.org/conda-forge/galario)
-![Python versions](https://img.shields.io/badge/python-%203.7%20%20|%203.8%20%20|%203.9-%20%230078BC.svg)
-[![codecov](https://codecov.io/gh/mtazzari/galario/branch/master/graph/badge.svg)](https://codecov.io/gh/mtazzari/galario)
+GALARIO computes synthetic interferometric visibilities from model images or
+axisymmetric radial profiles and evaluates their weighted chi-squared against
+observations. Version 1.3 is double precision only and provides:
 
+- A C++ CPU backend using FFTW and optional OpenMP.
+- An optional NVIDIA CUDA backend using cuFFT and cuBLAS.
+- Python 3.10+ bindings built with nanobind.
+- FFT, direct Fourier transform, NUFFT-style oversampling, and automatic
+  backend selection.
+- Reusable image contexts for repeated optimizer and MCMC evaluations.
 
-[![Anaconda-Server Badge](https://anaconda.org/conda-forge/galario/badges/latest_release_date.svg)](https://anaconda.org/conda-forge/galario)
-[![Anaconda-Server Badge](https://anaconda.org/conda-forge/galario/badges/platforms.svg)](https://anaconda.org/conda-forge/galario)
-[![License: LGPL v3](https://img.shields.io/badge/License-LGPL%20v3-blue.svg)](https://www.gnu.org/licenses/lgpl-3.0)
-[![DOI](https://zenodo.org/badge/82575704.svg)](https://zenodo.org/badge/latestdoi/82575704)
+## Repository layout
 
-<!-- [![Release Number](https://img.shields.io/github/release/mtazzari/galario.svg)](https://github.com/mtazzari/galario/releases) -->
-
-**galario** is a library that exploits the computing power of modern graphic cards (GPUs) to accelerate the comparison of model
-predictions to radio interferometer observations. Namely, it speeds up the computation of the synthetic visibilities
-given a model image (or an axisymmetric brightness profile) and their comparison to the observations.
-
-Check out the [documentation](https://mtazzari.github.io/galario/) and the [installation instructions](https://mtazzari.github.io/galario/install.html).
-
-**galario** is used in a growing number of publications. You can find the updated list of publications [[at this link]](https://ui.adsabs.harvard.edu/#search/q=citations(bibcode%3A2018MNRAS.476.4527T)%20&sort=date%20desc%2C%20bibcode%20desc&p_=0). 
-
-If you use **galario** for your research please cite  Tazzari, Beaujean and Testi (2018) MNRAS **476** 4527 [[MNRAS]](https://doi.org/10.1093/mnras/sty409) [[arXiv]](https://arxiv.org/abs/1709.06999) [[ADS]](http://adsabs.harvard.edu/abs/2018MNRAS.476.4527T):
-```
-@ARTICLE{2018MNRAS.476.4527T,
-   author = {{Tazzari}, M. and {Beaujean}, F. and {Testi}, L.},
-    title = "{GALARIO: a GPU accelerated library for analysing radio interferometer observations}",
-  journal = {\mnras},
-archivePrefix = "arXiv",
-   eprint = {1709.06999},
- primaryClass = "astro-ph.IM",
- keywords = {methods: numerical, techniques: interferometric, submillimetre: general},
-     year = 2018,
-    month = jun,
-   volume = 476,
-    pages = {4527-4542},
-      doi = {10.1093/mnras/sty409},
-   adsurl = {http://adsabs.harvard.edu/abs/2018MNRAS.476.4527T},
-  adsnote = {Provided by the SAO/NASA Astrophysics Data System}
-}
+```text
+src/             C++ and CUDA numerical core
+python/          installable Python API and nanobind binding
+tests/python/    Python integration and numerical reference tests
+examples/        directly executable tutorials
+benchmarks/      lightweight performance tools
+docs/            Sphinx documentation and the public uvtable example
 ```
 
+Large local observing data and research-run outputs belong outside the source
+distribution. This workspace ignores `data/` and `galario_fit/`.
 
-License
--------
-**galario** is free software licensed under the LGPLv3 License. For more details see the LICENSE.
+## Build
 
-© Copyright 2017-2020 Marco Tazzari, Frederik Beaujean, Leonardo Testi.
+CPU-only:
+
+```bash
+python -m pip install numpy nanobind scikit-build-core
+cmake -S . -B build -DGALARIO_CHECK_CUDA=0
+cmake --build build -j
+```
+
+CUDA:
+
+```bash
+cmake -S . -B build_gpu -DGALARIO_CHECK_CUDA=1
+cmake --build build_gpu -j
+```
+
+The currently maintained and tested target is Linux x86-64. CUDA builds require
+an NVIDIA toolkit and compatible driver.
+
+## Python API
+
+```python
+import galario
+
+vis = galario.sample_image(
+    image=image,
+    dxy=dxy,
+    u=u,
+    v=v,
+    backend=galario.BACKEND_FFT,
+)
+
+ctx = galario.create_image_context(
+    image.shape[0], image.shape[1],
+    u, v, vis_obs.real, vis_obs.imag, weights,
+)
+chi2 = galario.chi2_image(ctx=ctx, image=image, dxy=dxy)
+```
+
+Use `from galario import double as g` to explicitly select CPU. CUDA builds also
+provide `from galario import double_cuda as g`.
+
+## Tutorial and benchmark
+
+Open `examples/emcee_gaussian_profile.py`, edit the `USER CONFIGURATION` block,
+and run it directly in VSCode with the Python environment where GALARIO is
+installed. It uses `docs/uvtable.txt`, emcee 3, and writes a corner plot. The
+maintained default uses 128 uv points, 24 walkers, and 1000 steps.
+Set `USE_GPU` and `GPU_DEVICE` at the top of the file;
+set `USE_GPU = False` to run the same example on CPU.
+
+```bash
+PYTHONPATH=build/python python benchmarks/quickstart_benchmark.py
+```
+
+## Testing
+
+```bash
+PYTHONPATH=build/python python -m pytest -o addopts="" build/python/test_galario.py
+```
+
+## Citation
+
+If you use GALARIO in research, cite Tazzari, Beaujean and Testi (2018),
+MNRAS 476, 4527, DOI: 10.1093/mnras/sty409.
+
+GALARIO is licensed under LGPLv3.

@@ -1,82 +1,63 @@
-.. http://www.sphinx-doc.org/en/stable/domains.html#the-python-domain
-
 Python API reference
 ====================
 
-..
-   Doesn't work: no output, no error message
-         .. automodule:: galario.double
-            :members:
-            :undoc-members:
+Recommended API
+---------------
 
-The documentation of each function that is reported in this page can also be directly accessed from Python with, e.g.:
+New code should import ``galario`` and use:
 
-.. code:: python
+* ``create_image_context``
+* ``sample_image``
+* ``chi2_image``
+* ``sample_profile``
+* ``chi2_profile``
 
-    from galario.double import sampleImage
+The public backend constants are ``BACKEND_AUTO``, ``BACKEND_FFT``,
+``BACKEND_DFT``, and ``BACKEND_NUFFT``.
 
-    help(sampleImage)
+Compatibility API
+-----------------
 
-Computing synthetic visibilities
---------------------------------
-To compute the synthetic visibilities of a model use the :func:`sampleImage() <galario.double.sampleImage>` and
-:func:`sampleProfile() <galario.double.sampleProfile>` functions.
+The double-precision CPU module is ``galario.double``. CUDA builds additionally
+provide ``galario.double_cuda``. Their camelCase functions remain available:
 
-.. autofunction:: galario.double.sampleImage
-.. autofunction:: galario.double.sampleProfile
+* ``sampleImage`` and ``chi2Image``
+* ``sampleProfile`` and ``chi2Profile``
+* ``sampleImageComponents`` and ``chi2ImageComponents``
 
-.. note::
-    The translation by (dRA, dDec) and the rotation by PA of the model image are optimized for speed: they are not obtained
-    with extra interpolations of the model image, but rather applied in the Fourier plane.
+Runtime information
+-------------------
 
-    The offset is achieved by applying a complex phase to the sampled visibilities.
-    To rotation is achieved by internally rotating the (u, v) locations by -PA.
+``galario.HAVE_CUDA`` reports whether this package build contains the CUDA
+module. ``galario.HAVE_NANOBIND`` reports whether the native nanobind extension
+is available.
 
-    **Suggestion**: We recommend starting with `check` set to `True` to ensure
-    the results obtained are correct. Once a combination of matrix size and
-    `dxy` for the given data has been found, `uvcheck` can be safely set to
-    `False`.
+CPU execution is configured with ``galario.double.threads(count)``. CUDA device
+selection uses ``galario.double_cuda.ngpus()`` and
+``galario.double_cuda.use_gpu(device_id)``.
 
-Computing chi squared directly
--------------------------------
-To compute the :math:`\chi^2` of a model use the :func:`chi2Image() <galario.double.chi2Image>` and
-:func:`chi2Profile() <galario.double.chi2Profile>` functions.
+Array requirements
+------------------
 
-.. autofunction:: galario.double.chi2Image
-.. autofunction:: galario.double.chi2Profile
-
-GPU related
------------
-.. py:data:: galario.HAVE_CUDA
-
-    Global variable (`bool`). It is `True` if the GPU libraries
-    (`galario.double_cuda` and `galario.single_cuda`) are available, `False`
-    otherwise. On a machine without a CUDA-enabled GPU it is always `False`.
-
-.. autofunction:: galario.double.ngpus
-.. autofunction:: galario.double.use_gpu
-
-Other useful functions
-----------------------
-.. autofunction:: galario.double.threads
-.. autofunction:: galario.double.get_image_size
-.. autofunction:: galario.double.check_image_size
-.. autofunction:: galario.double.get_coords_meshgrid
-.. autofunction:: galario.double.sweep
-.. autofunction:: galario.double.apply_phase_vis
-.. autofunction:: galario.double.reduce_chi2
-
-
-.. _galario_exceptions:
+Inputs are converted to contiguous ``numpy.float64`` or ``numpy.complex128``
+arrays by the Python policy layer. Observation arrays must have matching
+one-dimensional lengths. Images must be square and have an even side length.
 
 Exceptions
 ----------
-|galario|'s C++ core throws various exception. They can be distinguished by the type and the error message.
 
-================================================  =======================  ================
-**Event**                                         **C++**                  **Python**
-------------------------------------------------  -----------------------  ----------------
-Out of memory on GPU                              `std::bad_alloc`         `MemoryError`
-Invalid argument (CPU/GPU)                        `std::invalid_argument`  `ValueError`
-Miscellaneous, including out of memory (CPU/GPU)  `std::runtime_error`     `RuntimeError`
-================================================  =======================  ================
+===============================================  ======================
+Event                                            Python exception
+===============================================  ======================
+Invalid dimensions, shapes, or backend name      ``ValueError``
+Allocation failure                               ``MemoryError``
+Backend or transform failure                     ``RuntimeError``
+===============================================  ======================
+
+For the complete callable surface, use Python introspection:
+
+.. code-block:: python
+
+    import galario
+    help(galario.sample_image)
+    help(galario.chi2_image)

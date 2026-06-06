@@ -17,9 +17,13 @@
 # For documentation see https://mtazzari.github.io/galario/                   #
 ###############################################################################
 
-cmake_minimum_required(VERSION 3.5)
-project(galario)
-set(PACKAGE_VERSION "'1.2.2'")
+cmake_minimum_required(VERSION 3.15)
+project(galario VERSION 1.3.0)
+
+# Keep third-party CMake helper noise under control on modern CMake versions.
+set(CMAKE_SUPPRESS_DEVELOPER_WARNINGS 1 CACHE INTERNAL "Suppress developer warnings from bundled CMake modules" FORCE)
+set(CMAKE_WARN_DEPRECATED FALSE CACHE BOOL "Suppress deprecated CMake warnings from bundled modules" FORCE)
+set(PACKAGE_VERSION "'${PROJECT_VERSION}'")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Release" CACHE STRING
@@ -28,7 +32,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif(NOT CMAKE_BUILD_TYPE)
 
 # if inside a conda env, install everything in there
-if (CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT AND DEFINED ENV{CONDA_PREFIX})
+if (CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT AND DEFINED ENV{CONDA_PREFIX} AND NOT DEFINED SKBUILD_PROJECT_NAME)
   # https://stackoverflow.com/questions/21437514/
   set(CMAKE_INSTALL_PREFIX "$ENV{CONDA_PREFIX}" CACHE PATH "Set the prefix based on conda environment" FORCE)
   message(STATUS "Installing inside conda env at ${CMAKE_INSTALL_PREFIX}")
@@ -53,9 +57,42 @@ if(NOT DEFINED GALARIO_CHECK_CUDA)
     set(GALARIO_CHECK_CUDA 1)
   endif()
 endif()
+
+if(GALARIO_CHECK_CUDA AND UNIX AND NOT APPLE)
+  set(_galario_cuda_roots
+    "$ENV{CUDA_HOME}"
+    "$ENV{CUDA_PATH}"
+    "/usr/local/cuda"
+    "/usr/local/cuda-12.6"
+    "/usr/local/cuda-12"
+  )
+  foreach(_cuda_root IN LISTS _galario_cuda_roots)
+    if(NOT _cuda_root)
+      continue()
+    endif()
+    if(EXISTS "${_cuda_root}/bin/nvcc")
+      if(NOT DEFINED CMAKE_CUDA_COMPILER OR CMAKE_CUDA_COMPILER STREQUAL "NOTFOUND")
+        set(CMAKE_CUDA_COMPILER "${_cuda_root}/bin/nvcc" CACHE FILEPATH "CUDA compiler" FORCE)
+      endif()
+      if(NOT DEFINED CUDAToolkit_ROOT OR NOT CUDAToolkit_ROOT)
+        set(CUDAToolkit_ROOT "${_cuda_root}" CACHE PATH "CUDA toolkit root" FORCE)
+      endif()
+      break()
+    endif()
+  endforeach()
+endif()
+
+set(CUDA_FOUND FALSE)
 if(GALARIO_CHECK_CUDA)
-  find_package(CUDA)
-  #enable_language(CUDA)
+  include(CheckLanguage)
+  check_language(CUDA)
+  if(CMAKE_CUDA_COMPILER)
+    enable_language(CUDA)
+    find_package(CUDAToolkit REQUIRED)
+    set(CUDA_FOUND TRUE)
+  else()
+    message(STATUS "CUDA compiler not found, building CPU-only targets")
+  endif()
 endif()
 
 # has to come before subdirectories are added
@@ -69,27 +106,11 @@ add_subdirectory(src)
 # python not required but optional
 ###
 set(BUILD_WRAPPER FALSE)
-
-# Include the CMake script UseCython.cmake.  This defines add_cython_module().
-# Instruction for use can be found at the top of cmake/UseCython.cmake.
-find_package(Cython)
-if (CYTHON_EXECUTABLE)
-  include(UseCython)
-endif()
-
-if(PYTHONLIBS_FOUND AND CYTHON_FOUND)
-  # to avoid fatal error: numpy/arrayobject.h: No such file or directory
-  find_package(Numpy)
-
-  # should check NUMPY_FOUND but there is a bug in GreatCmakeCookoff
-  # https://github.com/UCL/GreatCMakeCookOff/issues/57
-  # upon calling `make` repeatedly, NUMPY_FOUND set to false
-  if (NUMPY_INCLUDE_DIRS)
-    set(BUILD_WRAPPER TRUE)
-    include_directories("${NUMPY_INCLUDE_DIRS}")
-  else ()
-    message(STATUS "NumPy not found")
-  endif()
+find_package(Python COMPONENTS Interpreter Development.Module QUIET)
+if(Python_FOUND)
+  set(BUILD_WRAPPER TRUE)
+else()
+  message(STATUS "Skipping the ${PROJECT_NAME} python wrapper because Python development headers were not found")
 endif()
 
 if(BUILD_WRAPPER)

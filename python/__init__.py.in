@@ -19,13 +19,41 @@
 
 __version__ = ${PACKAGE_VERSION}
 
+import importlib.util as _importlib_util
+
 HAVE_CUDA = ("${CUDA_FOUND}" == "TRUE")
+HAVE_NANOBIND = False
 
-if HAVE_CUDA:
-    from . import single_cuda
-    from . import double_cuda
-
-from . import single
 from . import double
 
-from .double import arcsec, au, cgs_to_Jy, pc, deg
+if HAVE_CUDA:
+    from . import double_cuda
+    HAVE_NANOBIND = _importlib_util.find_spec(__name__ + ".nanobind_double_cuda") is not None
+    _preferred_module = double_cuda
+else:
+    HAVE_NANOBIND = _importlib_util.find_spec(__name__ + ".nanobind_double") is not None
+    _preferred_module = double
+
+for _name in getattr(_preferred_module, "__all__", []):
+    globals()[_name] = getattr(_preferred_module, _name)
+
+arcsec = _preferred_module.arcsec
+au = _preferred_module.au
+cgs_to_Jy = _preferred_module.cgs_to_Jy
+pc = _preferred_module.pc
+deg = _preferred_module.deg
+
+BACKEND_AUTO = _preferred_module.BACKEND_AUTO
+BACKEND_DFT = _preferred_module.BACKEND_DFT
+BACKEND_FFT = _preferred_module.BACKEND_FFT
+BACKEND_NUFFT = _preferred_module.BACKEND_NUFFT
+
+__all__ = list(getattr(_preferred_module, "__all__", [])) + [
+    "__version__",
+    "HAVE_CUDA",
+    "HAVE_NANOBIND",
+    "double",
+]
+
+if HAVE_CUDA:
+    __all__.append("double_cuda")

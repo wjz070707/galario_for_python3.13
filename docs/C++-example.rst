@@ -17,14 +17,11 @@ Here is a small test program that performs the FFT in 2D on an image with random
                     :language: c++
 
 After successfully installing |galario| to `/path/to/galario`, a simple
-test program running |galario| on the CPU with `openMP` and double
-precision can be built with::
+test program running |galario| on the CPU with `openMP` can be built with::
 
-  g++ -I/path/to/galario/include -L/path/to/galario/lib -lgalario -DDOUBLE_PRECISION galario_test.cpp -o galario_test
+  g++ -I/path/to/galario/include -L/path/to/galario/lib -lgalario galario_test.cpp -o galario_test
 
-To use single precision, simply do not define the preprocessor symbol `-DDOUBLE_PRECISION` and link in the appropriate library with `-lgalario_single`. A mismatch between the library and the preprocessor symbol causes undefined behavior but usually a segmentation fault causes the program to abort at runtime.
-
-If |galario| was installed with `cuda` support, you can link in `-lgalario_cuda` or `-lgalario_single_cuda` instead.
+If |galario| was installed with `cuda` support, you can link in `-lgalario_cuda` for the GPU build.
 
 Example walk-through
 --------------------
@@ -47,7 +44,7 @@ To create the input image, define a `std::vector` of the appropriate size. Not t
 
    std::vector<dreal> realdata(nx*ny);
 
-The data type `dreal` can refer to either `float` or `double`, depending on the preprocessor symbol `DOUBLE_PRECISION`. |galario| assumes the input is a real image but the output of the FFT is complex. |galario| provides a helper function to allocate an array of the proper size and to copy over the input image::
+The data type `dreal` is an alias for `double`. |galario| assumes the input is a real image but the output of the FFT is complex. |galario| provides a helper function to allocate an array of the proper size and to copy over the input image::
 
   dcomplex* res = copy_input(nx, ny, realdata);
 

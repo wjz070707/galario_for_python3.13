@@ -1,3 +1,13 @@
+1.3.0 (2026-04-09)
+++++++++++++++++++
+
+- [core] Add direct GPU image-space sampling for `sampleImage` and `chi2Image`, avoiding Fourier-plane interpolation on the CUDA path.
+- [interface] Add explicit `backend={'fft','dft','nufft','auto'}` controls to the Python and C++ sampling APIs, including cached image contexts.
+- [bench] Refresh `python/speed_benchmark.py` to compare the FFT, DFT, and oversampled-FFT (`nufft`) backends.
+- [packaging] Add a modern `pyproject.toml` build entry point based on scikit-build-core.
+- [interface] Refresh Python packaging metadata for Python 3.10-3.13 and NumPy 2.x.
+
+
 1.2.2 (2020-02-28)
 ++++++++++++++++++
 

@@ -33,9 +33,7 @@ and I get the following error:
 
 .. code-block:: bash
 
-  File "libcommon.pyx", line 630, in libcommon.chi2Profile
-  File "stringsource", line 653, in View.MemoryView.memoryview_cwrapper
-  File "stringsource", line 348, in View.MemoryView.memoryview.__cinit__
+  File ".../galario/double/__init__.py", line ..., in chi2Profile
   ValueError: ndarray is not C-contiguous
 
 The issue is caused by one of the arrays passed in input to `chi2Profile` being not C-contiguous, which is a requirement for the C++ code in GALARIO. You can check whether a NumPy array `x` is C-contiguous by printing `x.flags`. The first action to debug this issue is to print the flags of all the arrays in input to the function.
@@ -59,19 +57,6 @@ Alternatively, you can make the arrays contiguous all at once:
     u, v, Re, Im, w = np.require([u, v, Re, Im, w], requirements='C')
 
 
-
-..
-    I get this error:
-    ImportError                               Traceback (most recent call last)
-    <ipython-input-144-ee2f01adc0c4> in <module>()
-    ----> 1 from galario.double_cuda import sampleImage
-    /Users/tdavis/anaconda/lib/python3.5/site-packages/galario/double_cuda/__init__.py in <module>()
-    ----> 1 from .libcommon import *
-          2
-          3 _init()
-          4
-          5 import atexit
-    ImportError: No module named 'galario.double_cuda.libcommon'
 
 ..
     2) I am mainly interested in using this for line cubes.

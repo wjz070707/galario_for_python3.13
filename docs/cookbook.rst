@@ -13,38 +13,33 @@
 Using the GPU and CPU version
 -----------------------------
 
-The CPU version of |galario| is always compiled, even on a system without a CUDA-enabled GPU. In this case you can import
-the double and single precision CPU versions of the library with:
+The CPU version of |galario| is always compiled. For portable code, import the
+top-level package:
+
+.. code-block:: python
+
+    import galario
+
+The top-level API uses CUDA when the package was built with CUDA and otherwise
+uses CPU. Explicit modules remain available when hardware selection matters:
 
 .. code-block:: python
 
     from galario import double
-    from galario import single
-
-If built on a machine with a CUDA-enabled GPU, |galario| is compiled also for the GPU. You can still import
-the CPU version as above, and the GPU version as follows:
-
-.. code-block:: python
-
     from galario import double_cuda
-    from galario import single_cuda
 
 To check programmatically whether the GPU version is available, you can read the global variable :data:`galario.HAVE_CUDA`.
 
-The following snippet imports the GPU version of galario if it is available, otherwise it imports the CPU version:
+The following snippet explicitly selects the available implementation:
 
 .. code-block:: python
 
     if galario.HAVE_CUDA:
         from galario import double_cuda as g_double
-        from galario import single_cuda as g_single
     else:
         from galario import double as g_double
-        from galario import single as g_single
 
-This snippet simplifies the development of portable code. Since the functions in `double`, `double_cuda`, `single` and `single_cuda`
-have the same interfaces, by adding this snippet to the imports of the module you can develop and test your code on a machine even
-without a GPU, then move to a machine with a GPU and run it on the GPU without any change.
+In most programs, plain ``import galario`` is simpler.
 
 
 Selecting the GPU
@@ -54,7 +49,7 @@ obtained with the :func:`ngpus() <galario.double.ngpus>` function:
 
 .. code-block:: python
 
-    double_cuda.ngpus()   # or single_cuda.ngpus()
+    double_cuda.ngpus()
 
 which returns an integer number.
 
@@ -65,7 +60,8 @@ It is possible to tell |galario| to use a particular GPU for the computation the
     double_cuda.use_gpu(ID)
 
 where `ID` is an integer number representing the GPU ID. By default, |galario| uses the GPU with `ID=0`. This means that on machines
-with only one CUDA-capable GPU it is not necessary to call `double_cuda.use_GPU(0)` as this is the default behaviour.
+with only one CUDA-capable GPU it is not necessary to call
+``double_cuda.use_gpu(0)`` because device 0 is the default.
 
 .. note::
 
@@ -81,7 +77,7 @@ On the CPU
 ~~~~~~~~~~
 The CPU version of |galario| uses OpenMP to parallelize its operations by distributing the workload to different threads.
 
-Once you imported the CPU version of |galario| (either double or single precision), you can set the number of threads with
+Once you imported the CPU version of |galario|, you can set the number of threads with
 the :func:`threads() <galario.double.threads>` function:
 
 .. code-block:: python
@@ -108,17 +104,9 @@ It is possible to retrieve the number of threads used by galario by calling `dou
 
 On the GPU
 ~~~~~~~~~~
-It is possible to change the number of threads per block used to launch 1D and 2D kernels on the GPU with:
 
-.. code-block:: python
-
-    double_cuda.threads(N)
-
-where `N` is the square root of the number of threads for block to be used. By default, `N` is set to 16, which implies
-256 threads per block. Due to the physical structure of the current NVIDIA cards, `N` must be equal to 8, 16 or 32.
-
-This is an advanced feature, for most cases the default value should be sufficient. More details are given in the
-documentation of :func:`threads() <galario.double.threads>`.
+Kernel launch geometry is currently an implementation detail. Users normally
+only select the CUDA device with ``use_gpu``.
 
 
 .. _cookbook_meshgrid:
@@ -195,4 +183,3 @@ For an axisymmetric brightness :math:`f(R)`, once the meshgrid is computed, the 
     image = f(R_m)
 
     vis = sampleImage(image, ...)  or # chi2 = chi2Image(image, ...)
-

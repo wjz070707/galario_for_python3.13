@@ -11,6 +11,13 @@ For the purpose of these examples we will adopt a Bayesian approach, using Monte
 parameter space and to produce a sampling of the posterior probability function. In particular, we will use the MCMC
 implementation in the `emcee <http://dfm.io/emcee/current/>`_ Python package.
 
+.. note::
+
+    This page preserves the detailed scientific walk-through. The maintained,
+    executable emcee 3 implementation is documented in
+    :doc:`emcee_tutorial` and lives in
+    ``examples/emcee_gaussian_profile.py``.
+
 In this page we will show how to fit the mock observations of a protoplanetary disk. In particular, in the example we will
 analyse mock visibilities of the disk continuum emission at :math:`\lambda=` 1 mm whose synthetized map is shown in this figure:
 
@@ -105,6 +112,7 @@ Fit a single-wavelength data set
     .. code-block:: python
 
         from emcee import EnsembleSampler
+        from galario import double as g
 
         # radial grid parameters
         Rmin = 1e-4  # arcsec
@@ -122,11 +130,10 @@ Fit a single-wavelength data set
         ndim = len(p_ranges)        # number of dimensions
         nwalkers = 40               # number of walkers
 
-        nthreads = 4                # CPU threads that emcee should use
+        g.threads(4)                # OpenMP threads used inside GALARIO
 
         sampler = EnsembleSampler(nwalkers, ndim, lnpostfn,
-                                  args=[p_ranges, Rmin, dR, nR, nxy, dxy, u, v, Re, Im, w],
-                                  threads=nthreads)
+                                  args=[p_ranges, Rmin, dR, nR, nxy, dxy, u, v, Re, Im, w])
 
     where:
 
@@ -185,9 +192,7 @@ Fit a single-wavelength data set
                 if p[i] < par_ranges[i][0] or p[i] > par_ranges[i][1]:
                     return -np.inf
 
-            jacob = -p[0]       # jacobian of the log transformation
-
-            return jacob
+            return 0.0
 
     which, up to a constant, basically checks that `p` lies inside the rectangular domain defined by the extents in `p_ranges`.
 
@@ -199,15 +204,18 @@ Fit a single-wavelength data set
         nsteps = 3000     # total number of MCMC steps
 
         # initial guess for the parameters
-        p0 = [10, 0.5, 70., 60., 0., 0.] #  3 parameters for the model + 4 (inc, PA, dRA, dDec)
+        p0 = [10, 0.5, 70., 60., 0., 0.] # 2 model parameters + 4 geometry parameters
 
         # initialize the walkers with an ndim-dimensional Gaussian ball
         pos = [p0 + 1e-4*np.random.randn(ndim) for i in range(nwalkers)]
 
         # execute the MCMC
-        pos, prob, state = sampler.run_mcmc(pos, nsteps, rstate0=state, lnprob0=prob)
+        sampler.run_mcmc(pos, nsteps, progress=True)
 
-    It is possible to run the whole fit collecting the code blocks above into a single `quickstart.py` file and running `python quickstart.py`. For reference, using `nthreads=4`, the run takes approximately 5-8 mins on a laptop with an Intel i5 2.9GHz.
+    The maintained executable version lives in
+    ``examples/emcee_gaussian_profile.py``. Edit its configuration block and
+    run it directly; runtime depends on the selected points, walkers, steps,
+    radial cells, and CPU thread count.
 
 **7) Plot the fit results**
 
@@ -217,7 +225,7 @@ Fit a single-wavelength data set
 
         # do the corner plot
         import corner
-        samples = sampler.chain[:, -1000:, :].reshape((-1, ndim))
+        samples = sampler.get_chain(discard=1000, flat=True)
         fig = corner.corner(samples, labels=["$f_0$", "$\sigma$", r"$i$", r"PA", r"$\Delta$RA", r"$\Delta$Dec"],
                             show_titles=True, quantiles=[0.16, 0.50, 0.84],
                             label_kwargs={'labelpad':20, 'fontsize':0}, fontsize=8)

@@ -10,7 +10,14 @@
 
 # First attempts to find the package
 set(COOKOFF_DOWNLOAD_DIR "${CMAKE_BINARY_DIR}/external/src/GreatCMakeCookOff")
-find_package(GreatCMakeCookOff NO_MODULE PATHS "${COOKOFF_DOWNLOAD_DIR}" QUIET)
+
+# Prefer the vendored copy shipped in the repository before cloning anything.
+set(COOKOFF_VENDORED_DIR "${CMAKE_CURRENT_LIST_DIR}/../GreatCMakeCookOff")
+find_package(GreatCMakeCookOff NO_MODULE PATHS "${COOKOFF_VENDORED_DIR}" QUIET)
+
+if(NOT GreatCMakeCookOff_FOUND)
+  find_package(GreatCMakeCookOff NO_MODULE PATHS "${COOKOFF_DOWNLOAD_DIR}" QUIET)
+endif()
 
 # Otherwise attempts to download it.
 # Does not use ExternalProject_Add to avoid doing a recursive cmake step.
@@ -53,6 +60,7 @@ if(NOT GreatCMakeCookOff_FOUND)
   set(GreatCMakeCookOff_FOUND TRUE)
 endif()
 unset(COOKOFF_DOWNLOAD_DIR)
+unset(COOKOFF_VENDORED_DIR)
 
 # Adds GreatCMakeCookOff to module paths
 initialize_cookoff()

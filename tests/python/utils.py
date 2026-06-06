@@ -22,12 +22,14 @@
 
 from __future__ import (division, print_function, absolute_import, unicode_literals)
 
+# NumPy/SciPy reference implementations used only by the test suite.
 import numpy as np
 
 from scipy.interpolate import interp1d, RectBivariateSpline
-from scipy.integrate import trapz, quadrature
+from scipy.special import j0
 
-__all__ = ["py_sampleImage", "py_sampleProfile", "py_chi2Profile", "py_chi2Image",
+__all__ = ["py_sampleImage", "py_sampleImage_direct", "py_sampleProfile", "py_chi2Profile", "py_chi2Image",
+           "py_chi2Image_direct",
            "radial_profile", "g_sweep_prototype", "sweep_ref",
            "create_reference_image", "create_sampling_points", "uv_idx",
            "uv_idx_r2c", "int_bilin_MT", "matrix_size",
@@ -99,39 +101,79 @@ def py_sampleImage(reference_image, dxy, udat, vdat, dRA=0., dDec=0., PA=0., ori
     return vis
 
 
-def py_sampleProfile(intensity, Rmin, dR, nxy, dxy, udat, vdat, dRA=0., dDec=0., PA=0, inc=0.):
+def py_sampleImage_direct(reference_image, dxy, udat, vdat, dRA=0., dDec=0., PA=0., origin='upper',
+                         batch_size=32):
     """
-    Python implementation of sampleProfile.
+    Direct discrete Fourier sampling of an image at arbitrary (u, v) points.
+
+    This matches the new GPU image sampler, which evaluates the image-space
+    sum directly instead of interpolating an FFT grid.
 
     """
-    inc_cos = np.cos(inc)
+    if origin == 'upper':
+        v_origin = 1.
+    elif origin == 'lower':
+        v_origin = -1.
+    else:
+        raise ValueError("Expect origin='upper' or 'lower', got {!r}".format(origin))
 
-    nrad = len(intensity)
-    gridrad = np.linspace(Rmin, Rmin + dR * (nrad - 1), nrad)
+    nxy = reference_image.shape[0]
+    if reference_image.shape[1] != nxy:
+        raise ValueError("Expect a square image.")
 
-    ncol, nrow = nxy, nxy
-    # create the mesh grid
-    x = (np.linspace(0.5, -0.5 + 1./float(ncol), ncol)) * dxy * ncol
-    y = (np.linspace(0.5, -0.5 + 1./float(nrow), nrow)) * dxy * nrow
+    cos_PA = np.cos(PA)
+    sin_PA = np.sin(PA)
+    urot = udat * cos_PA - vdat * sin_PA
+    vrot = udat * sin_PA + vdat * cos_PA
 
-    # we shrink the x axis, since PA is the angle East of North of the
-    # the plane of the disk (orthogonal to the angular momentum axis)
-    # PA=0 is a disk with vertical orbital node (aligned along North-South)
-    x_axis, y_axis = np.meshgrid(x / inc_cos, y)
-    x_meshgrid = np.sqrt(x_axis ** 2. + y_axis ** 2.)
+    dRArot = dRA * cos_PA - dDec * sin_PA
+    dDecrot = dRA * sin_PA + dDec * cos_PA
 
-    # convert to Jansky
-    sr_to_px = dxy**2.
-    intensity *= sr_to_px
-    f = interp1d(gridrad, intensity, kind='linear', fill_value=0.,
-                 bounds_error=False, assume_sorted=True)
-    intensmap = f(x_meshgrid)
+    x = (nxy / 2. - np.arange(nxy, dtype=np.float64)) * dxy
+    y = v_origin * (nxy / 2. - np.arange(nxy, dtype=np.float64)) * dxy
+    image_t = np.asarray(reference_image, order='C').T
 
-    intensmap[nrow//2, ncol//2] = central_pixel(intensity, Rmin, dR, dxy)
+    vis = np.empty(len(udat), dtype=np.complex128)
 
-    vis = py_sampleImage(intensmap, dxy, udat, vdat, PA=PA, dRA=dRA, dDec=dDec)
+    for start in range(0, len(udat), batch_size):
+        stop = min(start + batch_size, len(udat))
+        u_batch = urot[start:stop]
+        v_batch = vrot[start:stop]
+
+        col_phase = np.exp(-2j * np.pi * np.outer(u_batch, x))
+        row_sums = col_phase @ image_t
+        row_phase = np.exp(-2j * np.pi * np.outer(v_batch, y))
+        shift_phase = np.exp(2j * np.pi * (u_batch * dRArot + v_batch * dDecrot))
+
+        vis[start:stop] = np.sum(row_sums * row_phase, axis=1) * shift_phase
 
     return vis
+
+
+def py_sampleProfile(intensity, Rmin, dR, nxy, dxy, udat, vdat, dRA=0., dDec=0., PA=0, inc=0.):
+    """
+    Python implementation of sampleProfile using a direct radial transform.
+
+    """
+    del nxy, dxy
+
+    abs_cos_inc = np.abs(np.cos(inc))
+    radius = Rmin + dR * np.arange(len(intensity), dtype=np.float64)
+
+    cos_PA = np.cos(PA)
+    sin_PA = np.sin(PA)
+    urot = udat * cos_PA - vdat * sin_PA
+    vrot = udat * sin_PA + vdat * cos_PA
+    rho = np.sqrt((abs_cos_inc * urot) ** 2. + vrot ** 2.)
+
+    kernel = radius[None, :] * intensity[None, :] * j0(2. * np.pi * rho[:, None] * radius[None, :])
+    vis_real = 2. * np.pi * abs_cos_inc * np.trapezoid(kernel, dx=dR, axis=1)
+
+    dRArot = dRA * cos_PA - dDec * sin_PA
+    dDecrot = dRA * sin_PA + dDec * cos_PA
+    theta = 2. * np.pi * (urot * dRArot + vrot * dDecrot)
+
+    return vis_real * (np.cos(theta) + 1j * np.sin(theta))
 
 
 def py_chi2Image(reference_image, dxy, udat, vdat, vis_obs_re, vis_obs_im, weights, dRA=0., dDec=0., PA=0.):
@@ -140,6 +182,20 @@ def py_chi2Image(reference_image, dxy, udat, vdat, vis_obs_re, vis_obs_im, weigh
 
     """
     vis = py_sampleImage(reference_image, dxy, udat, vdat, PA=PA, dRA=dRA, dDec=dDec)
+
+    chi2 = np.sum(((vis.real - vis_obs_re)**2. + (vis.imag - vis_obs_im)**2.)*weights)
+
+    return chi2
+
+
+def py_chi2Image_direct(reference_image, dxy, udat, vdat, vis_obs_re, vis_obs_im, weights, dRA=0., dDec=0., PA=0.,
+                        origin='upper', batch_size=32):
+    """
+    Python implementation of chi2Image using the direct image sampler.
+
+    """
+    vis = py_sampleImage_direct(reference_image, dxy, udat, vdat, PA=PA, dRA=dRA, dDec=dDec,
+                                origin=origin, batch_size=batch_size)
 
     chi2 = np.sum(((vis.real - vis_obs_re)**2. + (vis.imag - vis_obs_im)**2.)*weights)
 
@@ -217,7 +273,7 @@ def g_sweep_prototype(I, Rmin, dR, nrow, ncol, dxy, inc, dtype_image='float64'):
     inc_cos = np.cos(inc)
 
     # radial extent in number of image pixels covered by the profile
-    rmax = min(np.int(np.ceil((Rmin+nrad*dR)/dxy)), irow_center)
+    rmax = min(int(np.ceil((Rmin+nrad*dR)/dxy)), irow_center)
     row_offset = irow_center-rmax
     col_offset = icol_center-rmax
     for irow in range(rmax*2):
@@ -227,7 +283,7 @@ def g_sweep_prototype(I, Rmin, dR, nrow, ncol, dxy, inc, dtype_image='float64'):
             rr = np.sqrt((x/inc_cos)**2. + (y)**2.)
 
             # interpolate 1D
-            iR = np.int(np.floor((rr-Rmin) / dR))
+            iR = int(np.floor((rr-Rmin) / dR))
             if iR >= nrad-1:
                 image[irow+row_offset, jcol+col_offset] = 0.
             else:
@@ -394,10 +450,12 @@ def int_bilin_MT(f, x, y):
     for i in range(len(x)):
         t = y[i] - np.floor(y[i])
         u = x[i] - np.floor(x[i])
-        y0 = f[np.int(np.floor(y[i])), np.int(np.floor(x[i]))]
-        y1 = f[np.int(np.floor(y[i])) + 1, np.int(np.floor(x[i]))]
-        y2 = f[np.int(np.floor(y[i])) + 1, np.int(np.floor(x[i])) + 1]
-        y3 = f[np.int(np.floor(y[i])), np.int(np.floor(x[i])) + 1]
+        yi = int(np.floor(y[i]))
+        xi = int(np.floor(x[i]))
+        y0 = f[yi, xi]
+        y1 = f[yi + 1, xi]
+        y2 = f[yi + 1, xi + 1]
+        y3 = f[yi, xi + 1]
 
         vis_int[i] = t * u * (y0 - y1 + y2 - y3)
         vis_int[i] += t * (y1 - y0)

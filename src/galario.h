@@ -23,21 +23,71 @@
 
 namespace galario {
 
+enum Backend {
+    BACKEND_AUTO = 0,
+    BACKEND_FFT = 1,
+    BACKEND_DFT = 2,
+    BACKEND_NUFFT = 3
+};
+
 /* Main user functions */
 void sample_profile(int nr, const dreal* intensity, dreal Rmin, dreal dR, dreal dxy, int nxy, dreal inc, dreal dRA,
-                    dreal dDec, dreal duv, dreal PA, int nd, const dreal *u, const dreal *v, dcomplex *vis_int);
-void sample_image(int nx, int ny, const dreal* image, const dreal v_origin, dreal dRA, dreal dDec, dreal duv, dreal PA, int nd, const dreal* u, const dreal* v, dcomplex* vis_int);
+                    dreal dDec, dreal duv, dreal PA, int nd, const dreal *u, const dreal *v, dcomplex *vis_int,
+                    int backend = BACKEND_AUTO, dreal nufft_oversample = 2.0);
+void sample_image(int nx, int ny, const dreal* image, const dreal v_origin, dreal dRA, dreal dDec, dreal duv, dreal PA, int nd, const dreal* u, const dreal* v, dcomplex* vis_int,
+                  int backend = BACKEND_AUTO, dreal nufft_oversample = 2.0);
 dreal chi2_profile(int nr, const dreal* intensity, dreal Rmin, dreal dR, dreal dxy, int nxy, dreal inc, dreal dRA,
                    dreal dDec, dreal duv, dreal PA, int nd, const dreal *u, const dreal *v, const dreal *vis_obs_re,
-                   const dreal *vis_obs_im, const dreal *weights);
-dreal chi2_image(int nx, int ny, const dreal* image, const dreal v_origin, dreal dRA, dreal dDec, dreal duv, dreal PA, int nd, const dreal* u, const dreal* v, const dreal* vis_obs_re, const dreal* vis_obs_im, const dreal* weights);
+                   const dreal *vis_obs_im, const dreal *weights, int backend = BACKEND_AUTO, dreal nufft_oversample = 2.0);
+dreal chi2_image(int nx, int ny, const dreal* image, const dreal v_origin, dreal dRA, dreal dDec, dreal duv, dreal PA, int nd, const dreal* u, const dreal* v, const dreal* vis_obs_re, const dreal* vis_obs_im, const dreal* weights,
+                 int backend = BACKEND_AUTO, dreal nufft_oversample = 2.0);
 struct Chi2ImageContext;
-Chi2ImageContext* create_chi2_image_context(int nx, int ny, int nd, const dreal* u, const dreal* v,
+Chi2ImageContext* create_image_context(int nx, int ny, int nd, const dreal* u, const dreal* v,
                                             const dreal* vis_obs_re, const dreal* vis_obs_im,
-                                            const dreal* weights);
-void destroy_chi2_image_context(Chi2ImageContext* context);
-dreal chi2_image_cached(Chi2ImageContext* context, const dreal* image, const dreal v_origin,
+                                            const dreal* weights, int backend = BACKEND_AUTO, dreal nufft_oversample = 2.0);
+void destroy_image_context(Chi2ImageContext* context);
+int image_context_requested_backend(const Chi2ImageContext* context);
+int image_context_backend(const Chi2ImageContext* context);
+int image_context_batch_backend(const Chi2ImageContext* context, int batch_size);
+void sample_image_components(int nx, int ny, dreal dxy,
+                             int ngauss, const dreal* gauss_params,
+                             int nrings, const dreal* ring_params,
+                             int narcs, const dreal* arc_params,
+                             dreal inc, const dreal v_origin,
+                             dreal dRA, dreal dDec, dreal duv, dreal PA,
+                             int nd, const dreal* u, const dreal* v, dcomplex* vis_int,
+                             int backend = BACKEND_AUTO, dreal nufft_oversample = 2.0);
+dreal chi2_image_components(int nx, int ny, dreal dxy,
+                            int ngauss, const dreal* gauss_params,
+                            int nrings, const dreal* ring_params,
+                            int narcs, const dreal* arc_params,
+                            dreal inc, const dreal v_origin,
+                            dreal dRA, dreal dDec, dreal duv, dreal PA,
+                            int nd, const dreal* u, const dreal* v,
+                            const dreal* vis_obs_re, const dreal* vis_obs_im, const dreal* weights,
+                            int backend = BACKEND_AUTO, dreal nufft_oversample = 2.0);
+dreal chi2_image_from_context_components(Chi2ImageContext* context, dreal dxy,
+                                   int ngauss, const dreal* gauss_params,
+                                   int nrings, const dreal* ring_params,
+                                   int narcs, const dreal* arc_params,
+                                   dreal inc, const dreal v_origin,
+                                   dreal dRA, dreal dDec, dreal duv, dreal PA);
+void chi2_image_from_context_components_batch(Chi2ImageContext* context, dreal dxy,
+                                        int batch_size,
+                                        int ngauss, const dreal* gauss_params_batch,
+                                        int nrings, const dreal* ring_params_batch,
+                                        int narcs, const dreal* arc_params_batch,
+                                        const dreal* inc_batch, const dreal v_origin,
+                                        const dreal* dRA_batch, const dreal* dDec_batch,
+                                        dreal duv, const dreal* PA_batch, dreal* chi2_out);
+dreal chi2_image_from_context(Chi2ImageContext* context, const dreal* image, const dreal v_origin,
                         dreal dRA, dreal dDec, dreal duv, dreal PA);
+dreal chi2_profile_from_context(Chi2ImageContext* context,
+                                int nr, const dreal* intensity,
+                                dreal Rmin, dreal dR, int nxy, dreal dxy,
+                                dreal inc, dreal dRA, dreal dDec,
+                                dreal duv, dreal PA);
+
 void sweep(int nr, const dreal* intensity, dreal Rmin, dreal dR, int nxy, dreal dxy, dreal inc, dcomplex *image);
 void uv_rotate(dreal PA, dreal dRA, dreal dDec, dreal* dRArot, dreal* dDecrot, int nd, const dreal* u, const dreal* v, dreal* urot, dreal* vrot);
 

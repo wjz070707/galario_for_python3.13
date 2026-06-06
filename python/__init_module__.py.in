@@ -17,9 +17,11 @@
 # For documentation see https://mtazzari.github.io/galario/                   #
 ###############################################################################
 
-from .libcommon import *
+import importlib
 
-_init()
+_nanobind_module = importlib.import_module("..@GALARIO_NANOBIND_PACKAGE@", __name__)
 
-import atexit
-atexit.register(_cleanup)
+for _name in dir(_nanobind_module):
+    if _name.startswith("__"):
+        continue
+    globals()[_name] = getattr(_nanobind_module, _name)
