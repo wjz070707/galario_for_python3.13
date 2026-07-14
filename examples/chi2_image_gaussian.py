@@ -22,14 +22,16 @@ REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 UVTABLE = REPOSITORY_ROOT / "docs" / "uvtable.txt"
 OUTPUT = REPOSITORY_ROOT / "triangle_image_example.png"
 UV_SAMPLES = None  # None uses every valid row in the uv table.
+SOURCE_RADIUS_ARCSEC = 4.0
+FOV_PADDING = 4.0 / 3.0
 MIN_IMAGE_SIZE = 128
 WALKERS = 24
 STEPS = 1000
 BURN_IN = 500
-CPU_THREADS = 2
+CPU_THREADS = 8
 RANDOM_SEED = 12345
 SHOW_PROGRESS = True
-USE_GPU = True
+USE_GPU = False
 GPU_DEVICE = 0
 
 
@@ -162,12 +164,27 @@ def main() -> None:
         backend.threads(CPU_THREADS)
         print(f"using CPU with {CPU_THREADS} OpenMP threads")
 
-    # Derive a safe image geometry from the observed uv coverage.
-    suggested_nxy, dxy = backend.get_image_size(u, v, verbose=True)
+    # The model FOV is a source/offset choice; uv coverage sets the pixel size.
+    image_fov = backend.estimate_fov_from_source(
+        SOURCE_RADIUS_ARCSEC * arcsec,
+        offset=(
+            max(abs(PARAMETER_RANGES[4, 0]), abs(PARAMETER_RANGES[4, 1]))
+            * arcsec,
+            max(abs(PARAMETER_RANGES[5, 0]), abs(PARAMETER_RANGES[5, 1]))
+            * arcsec,
+        ),
+        padding=FOV_PADDING,
+        verbose=True,
+    )
+    suggested_nxy, dxy = backend.get_image_size_from_fov(
+        u, v, image_fov, verbose=True
+    )
     nxy = max(MIN_IMAGE_SIZE, suggested_nxy)
+    dxy = image_fov / nxy
     print(
-        f"using a {nxy}x{nxy} image with "
-        f"{dxy / arcsec:.6f} arcsec pixels"
+        f"using a {nxy}x{nxy} image over "
+        f"{image_fov / arcsec:.3f} arcsec with {dxy / arcsec:.6f} "
+        "arcsec pixels"
     )
 
     # Reuse fixed observations, FFT plans, and backend work buffers in MCMC.

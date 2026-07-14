@@ -31,6 +31,9 @@ UV_RESIDUAL_OUTPUT = PICTURES_DIR / "visibility_uv_residual_image_example.png"
 RESIDUAL_HIST_OUTPUT = PICTURES_DIR / "visibility_residual_hist_image_example.png"
 SURFACE_OUTPUT = PICTURES_DIR / "visibility_surface_image_example.png"
 SURFACE_GIF_OUTPUT = PICTURES_DIR / "visibility_surface_image_example.gif"
+SOURCE_RADIUS_ARCSEC = 4.0
+MAX_OFFSET_ARCSEC = 2.0
+FOV_PADDING = 4.0 / 3.0
 MIN_IMAGE_SIZE = 128
 CPU_THREADS = 8
 UV_SAMPLES = None  # None uses every valid row in the uv table.
@@ -360,8 +363,17 @@ def main() -> None:
     backend.threads(CPU_THREADS)
 
     u, v, data_re, data_im, weights = load_uv_table()
-    suggested_nxy, dxy = backend.get_image_size(u, v, verbose=True)
+    image_fov = backend.estimate_fov_from_source(
+        SOURCE_RADIUS_ARCSEC * arcsec,
+        offset=(MAX_OFFSET_ARCSEC * arcsec, MAX_OFFSET_ARCSEC * arcsec),
+        padding=FOV_PADDING,
+        verbose=True,
+    )
+    suggested_nxy, dxy = backend.get_image_size_from_fov(
+        u, v, image_fov, verbose=True
+    )
     nxy = max(MIN_IMAGE_SIZE, suggested_nxy)
+    dxy = image_fov / nxy
 
     model_vis = backend.sample_image(
         nx=nxy,

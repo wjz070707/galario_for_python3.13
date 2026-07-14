@@ -44,6 +44,57 @@ from galario import double as g_double_cpu
 CUDA_DIRECT_IMAGE_BACKEND = galario.HAVE_CUDA and int(environ.get("GALARIO_TEST_GPU", 0))
 IMAGE_BACKENDS = [galario.BACKEND_FFT, galario.BACKEND_DFT, galario.BACKEND_NUFFT]
 
+
+def test_estimate_fov_from_source_uses_extent_offset_and_padding():
+    fov = g_double_cpu.estimate_fov_from_source(
+        4.0 * arcsec,
+        offset=(2.0 * arcsec, -1.0 * arcsec),
+        padding=4.0 / 3.0,
+    )
+
+    assert fov / arcsec == pytest.approx(16.0)
+
+
+def test_estimate_fov_from_source_can_require_primary_beam_level():
+    fov = g_double_cpu.estimate_fov_from_source(
+        1.0 * arcsec,
+        primary_beam=10.0 * arcsec,
+        primary_beam_level=0.25,
+    )
+
+    assert fov / arcsec == pytest.approx(10.0 * np.sqrt(2.0))
+
+
+def test_estimate_fov_from_source_rejects_unsafe_max_fov():
+    with pytest.raises(RuntimeError, match="exceeds max_fov"):
+        g_double_cpu.estimate_fov_from_source(
+            4.0 * arcsec,
+            offset=2.0 * arcsec,
+            padding=2.0,
+            max_fov=10.0 * arcsec,
+        )
+
+
+def test_get_image_size_from_fov_uses_explicit_fov():
+    u = np.array([1.0e5, 3.8e6])
+    v = np.array([0.0, 0.0])
+    fov = 15.0 * arcsec
+
+    nxy, dxy = g_double_cpu.get_image_size_from_fov(
+        u, v, fov, pixels_per_fringe=3.0
+    )
+
+    assert nxy == 1024
+    assert dxy == pytest.approx(fov / nxy)
+    assert 1.0 / (3.8e6 * dxy) >= 3.0
+
+
+def test_get_image_size_from_fov_rejects_invalid_uv_data():
+    with pytest.raises(ValueError, match="No finite, positive uv distances"):
+        g_double_cpu.get_image_size_from_fov(
+            np.array([0.0, np.nan]), np.array([0.0, 0.0]), 1.0 * arcsec
+        )
+
 # PARAMETERS FOR MULTIPLE TEST EXECUTIONS
 par1 = {'dRA': 0., 'dDec': 0.4, 'PA': 2., 'nxy': 1024}
 par2 = {'dRA': -3.5, 'dDec': 7.2, 'PA': -23., 'nxy': 2048}

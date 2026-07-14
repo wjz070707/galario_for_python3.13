@@ -47,7 +47,10 @@ Profile functions demonstrated
 
 The MCMC example uses:
 
-* ``get_image_size`` derives ``nxy`` and ``dxy`` from the uv coverage.
+* ``estimate_fov_from_source`` estimates a model FOV from source extent,
+  source offset, and padding.
+* ``get_image_size_from_fov`` derives ``nxy`` and ``dxy`` from that FOV and
+  the longest observed baselines.
 * ``create_image_context`` caches observations and FFT workspaces.
 * ``sample_profile`` evaluates initial model visibilities.
 * ``reduce_chi2`` computes chi-squared from those sampled visibilities.
@@ -59,10 +62,11 @@ Image API example
 -----------------
 
 Run ``examples/chi2_image_gaussian.py`` for the equivalent complete image
-workflow. It uses ``get_image_size``, ``sample_image``,
-``create_image_context``, and contextual ``chi2_image`` before fitting the
-Gaussian with emcee and writing ``triangle_image_example.png``. Its
-configuration block is independent from the profile example.
+workflow. It uses ``estimate_fov_from_source``,
+``get_image_size_from_fov``, ``sample_image``, ``create_image_context``, and
+contextual ``chi2_image`` before fitting the Gaussian with emcee and writing
+``triangle_image_example.png``. Its configuration block is independent from
+the profile example.
 
 Model and sampled parameters
 ----------------------------

@@ -24,6 +24,8 @@ OUTPUT = REPOSITORY_ROOT / "triangle_example.png"
 # Set UV_SAMPLES to None to use the complete uv table. A value larger than the
 # table is also treated as "all data" rather than as an error.
 UV_SAMPLES = None
+SOURCE_RADIUS_ARCSEC = 4.0
+FOV_PADDING = 4.0 / 3.0
 MIN_IMAGE_SIZE = 128
 RADIAL_CELLS = 1280
 WALKERS = 24
@@ -32,7 +34,7 @@ BURN_IN = 500
 CPU_THREADS = 2
 RANDOM_SEED = 12345
 SHOW_PROGRESS = True
-USE_GPU = True
+USE_GPU = False
 GPU_DEVICE = 0
 
 
@@ -167,9 +169,23 @@ def main() -> None:
         backend.threads(CPU_THREADS)
         print(f"using CPU with {CPU_THREADS} OpenMP threads")
 
-    # Infer a safe FFT image geometry from the observed uv coverage.
-    suggested_nxy, dxy = backend.get_image_size(u, v, verbose=True)
+    # The model FOV is a source/offset choice; uv coverage sets the pixel size.
+    image_fov = backend.estimate_fov_from_source(
+        SOURCE_RADIUS_ARCSEC * arcsec,
+        offset=(
+            max(abs(PARAMETER_RANGES[4, 0]), abs(PARAMETER_RANGES[4, 1]))
+            * arcsec,
+            max(abs(PARAMETER_RANGES[5, 0]), abs(PARAMETER_RANGES[5, 1]))
+            * arcsec,
+        ),
+        padding=FOV_PADDING,
+        verbose=True,
+    )
+    suggested_nxy, dxy = backend.get_image_size_from_fov(
+        u, v, image_fov, verbose=True
+    )
     nxy = max(MIN_IMAGE_SIZE, suggested_nxy)
+    dxy = image_fov / nxy
 
     r_min = 0.0
     dr = 0.004 * arcsec
@@ -181,7 +197,8 @@ def main() -> None:
         )
     print(
         f"using {len(table)} uv samples, {nxy}x{nxy} pixels, "
-        f"and a {radial_extent / arcsec:.3f} arcsec radial grid"
+        f"{image_fov / arcsec:.3f} arcsec FOV, and a "
+        f"{radial_extent / arcsec:.3f} arcsec radial grid"
     )
 
     # Always reuse a context when observations stay fixed. It uploads u/v,

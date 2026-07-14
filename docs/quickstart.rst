@@ -72,16 +72,27 @@ Fit a single-wavelength data set
     where the :math:`u_j` and :math:`v_j` coordinates have been converted in units of the observing wavelength, 1 mm in this example. The `np.require` command is necessary to ensure that the arrays are C-contiguous as required by |galario| (see :ref:`FAQ 1.1 <FAQ1.1>`).
 
 **2) Determine the image size**
-    Once imported the uv table, we can start using |galario| to compute the optimal image size
+    Once imported the uv table, estimate a model field of view from the
+    expected source extent and offset, then let |galario| compute a pixel size
+    fine enough for the longest observed baselines:
 
     .. code-block:: python
 
-        from galario.double import get_image_size
+        from galario import arcsec
+        from galario.double import estimate_fov_from_source
+        from galario.double import get_image_size_from_fov
 
-        nxy, dxy = get_image_size(u, v, verbose=True)
+        fov = estimate_fov_from_source(
+            source_radius=4.0 * arcsec,
+            offset=(2.0 * arcsec, 2.0 * arcsec),
+            padding=4.0 / 3.0,
+        )
+        nxy, dxy = get_image_size_from_fov(u, v, fov, verbose=True)
 
     where the returned values are the number of pixels (`nxy`) and the pixel size (`dxy`) in radians.
-    `nxy` and `dxy` are chosen to fulfil criteria that ensure a correct computation of the synthetic visibilities.
+    The field of view should be chosen from the expected source extent,
+    possible source offset, and any desired padding or primary-beam coverage.
+    The uv coverage then sets the maximum allowed pixel size.
     For more details, refer to Sect. 3.2 in `Tazzari, Beaujean and Testi (2018) MNRAS 476 4527 <https://doi.org/10.1093/mnras/sty409>`_.
 
 **3) Define the brightness model**
